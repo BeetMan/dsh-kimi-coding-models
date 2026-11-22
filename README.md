@@ -1,0 +1,46 @@
+# Kimi Coding models for DeepSeek Harness
+
+A DeepSeek Harness bundle that keeps the `kimi-coding` route aligned with Kimi Coding's live model catalog and reads the current subscription quota.
+
+## Features
+
+- **Settings → Kimi Coding** page with manual **Check for updates** and **Sync models now** actions.
+- Live model comparison, newly added and removed model reporting, and actionable errors.
+- **5-hour rolling** and **7-day** subscription quota display with remaining amounts and reset times.
+- Agent tools: `kimi_coding_models` and `kimi_coding_usage`.
+- Persisted settings for model and quota endpoints, route base URL, credential reference, default output tokens, and startup synchronization.
+- English and Chinese UI.
+
+The UI and tools call the same Host operations. Model changes are saved through DSH's configuration editor; quota reads never modify configuration.
+
+## Requirements
+
+- DeepSeek Harness `>= 0.2.2-rc.5`
+- A profile using `@deepseek-ai/dsh-llm-pi-ai` with a `kimi-coding` route
+- A Kimi Coding subscription credential referenced by `KIMI_CODING_API_KEY` (or your configured reference)
+
+## Installation
+
+Install this directory through **Plugins → Add plugin** in DeepSeek Harness, or with the plugin manager's local-directory bundle installation.
+
+## Usage
+
+Open **Settings → Kimi Coding**:
+
+1. Select **Check for updates** to compare the live catalog without writing.
+2. Select **Sync models now** to write every published model into the route configuration. If the sync removes models no longer published, review the warning and confirm it explicitly.
+3. Select **Refresh quota** to read the current rolling and weekly quota.
+
+From an agent session:
+
+```text
+kimi_coding_models({})
+kimi_coding_models({ apply: true })
+kimi_coding_usage({})
+```
+
+See [the detailed behavior and limitations](docs/DETAIL.md) before changing advanced settings.
+
+## Privacy
+
+Only normalized model and quota fields cross the plugin's Host/Client boundary. API keys are resolved through DSH credentials and are never returned to the browser or included in tool output. Account identifiers and wallet metadata from the upstream quota response are discarded.

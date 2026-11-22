@@ -1,0 +1,4 @@
+- insert:
+    - id: kimi-coding-models
+      name: dsh-kimi-coding-models
+      config: {}
