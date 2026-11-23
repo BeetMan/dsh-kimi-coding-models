@@ -12,12 +12,21 @@ import { REMOTE } from './remote.js'
 // profile's node_modules. Resolve only official runtime packages from the DSH
 // installation so a fresh clone needs no dependency-install step.
 const installCandidates = [
+  // Only shell tool executions receive DSH_INSTALL_DIR: dsh-shell-env builds
+  // that DSH_* overlay per call, so the Host process itself never has it. Keep
+  // it first for CLI and source launches, then accept the packaged Desktop
+  // layouts, whose asar root is itself a valid require anchor.
   process.env.DSH_INSTALL_DIR,
+  ...process.resourcesPath ? [join(process.resourcesPath, 'app.asar')] : [],
+  ...process.resourcesPath ? [join(process.resourcesPath, 'app')] : [],
   ...process.resourcesPath ? [join(process.resourcesPath, 'app.asar/dsh/node_modules/@deepseek-ai/dsh')] : [],
 ].filter(Boolean)
-const installDir = installCandidates.find(path => existsSync(join(path, 'package.json')))
-if (installDir === undefined) throw new Error('kimi-coding-models: could not locate the running DSH installation')
-const hostRequire = createRequire(join(installDir, 'package.json'))
+const installAnchor = installCandidates.find(path => existsSync(join(path, 'package.json')))
+  ?? installCandidates.find(path => existsSync(join(path, 'node_modules/@deepseek-ai/schemastery')))
+if (installAnchor === undefined) throw new Error(
+  `kimi-coding-models: could not locate the running DSH installation (tried: ${installCandidates.join(', ') || 'nothing'})`,
+)
+const hostRequire = createRequire(join(installAnchor, 'package.json'))
 const z = hostRequire('@deepseek-ai/schemastery')
 const { RemoteError, TypertRemoteService } = hostRequire('@deepseek-ai/dsh-typert-protocol')
 

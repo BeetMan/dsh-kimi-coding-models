@@ -81,6 +81,10 @@ input modalities, reasoning efforts, and Kimi's OpenAI Chat Completions compatib
 
 - Synchronization replaces the route's model list with the complete live list, so a model Kimi
   stops publishing is removed on the next sync.
+- The live listing discloses no output cap, so a newly discovered model starts at the configured
+  default output tokens (32768). Kimi documents a `max_completion_tokens` default of 131072 for the
+  K3 and K3.1 families, so raise that setting before syncing one of those models if you want the
+  documented cap.
 - Startup synchronization is not an interval scheduler; it runs once per plugin activation.
 - A home patch or command-line overlay can override the route. In that case the configuration
   editor refuses the write and the page reports the failure instead of claiming success.
