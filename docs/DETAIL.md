@@ -15,8 +15,16 @@ Settings page's **Refresh quota** action.
 The quota panel reads `https://api.kimi.com/coding/v1/usages` with the same credential
 reference and normalizes two windows:
 
-- the **5-hour rolling window**, with its used percentage, reset time, and a live countdown to that reset;
+- the **5-hour rolling window**, with its used percentage, reset time, a live countdown to that reset, a
+  sampled mini trend, and a pace-based estimate of when the window fills;
 - the **7-day quota**, with the same facts.
+
+Every successful read appends a sample to a local history file (`~/.dsh/kimi-coding-quota-history.json`,
+seven-day retention, one per minute at most); the trend view shows the newest samples as a sparkline and
+projects the hours left until each window reaches 100% from the pace of the last two hours. The projection
+needs at least six recent samples and a clearly rising slope, and appears in the panels, the chat popover,
+and the `kimi_coding_usage` report. Quota reads share a 60-second cache; pass `force: true` to
+`kimi_coding_usage` (or use the panels' refresh actions) to bypass it.
 
 The endpoint is not a stable public API contract, so malformed or changed responses produce an
 error rather than invented values. Only normalized quota fields leave the Host. Upstream user
@@ -75,6 +83,13 @@ Open **Settings → Kimi Coding**.
   configured or currently served model that the write would remove. The result also displays its
   catalog endpoint and check time. Catalog requests are bounded to 30 seconds and are cancelled
   when the panel unmounts or its synchronization settings change.
+
+### Pinned models
+
+Each row in **Model limits** carries a pin toggle. A pinned model survives synchronization even when the
+live catalog no longer lists it: a configured entry keeps its fields, a served-only model drops to a bare
+entry, and neither appears in the removal report. The sync result names the pinned survivors, and the
+removal confirmation does not cover them. Pinning records the model id in the plugin configuration.
 
 ### Per-model limits
 

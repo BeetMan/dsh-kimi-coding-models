@@ -69,6 +69,11 @@ window.__ModuleLoader__.load({
       capsSaved: 'Model limits saved.',
       capsReload: 'Reload',
       capsInvalid: 'Enter a positive whole number, or leave the field empty.',
+      pinModel: 'Pin: keep this model when synchronizing, even if the catalog drops it.',
+      unpinModel: 'Unpin: let synchronization remove this model when the catalog drops it.',
+      pinnedBadge: 'Pinned',
+      pinnedKept: 'Pinned, kept although no longer published',
+      exhaustionIn: 'At this pace, full in ~{h}h',
       quotaHint: 'Read the current 5-hour rolling window and 7-day subscription quota.',
       refreshQuota: 'Refresh quota',
       refreshingQuota: 'Reading quota…',
@@ -176,6 +181,11 @@ window.__ModuleLoader__.load({
       capsSaved: '模型限制已保存。',
       capsReload: '重新读取',
       capsInvalid: '请输入正整数，或留空。',
+      pinModel: '锁定：同步时保留此模型，即使线上目录已下架。',
+      unpinModel: '解锁：同步时若线上目录已下架则移除此模型。',
+      pinnedBadge: '已锁定',
+      pinnedKept: '已锁定保留（线上已下架）',
+      exhaustionIn: '按当前速率约 {h} 小时后用尽',
       quotaHint: '读取当前 5 小时滚动窗口和 7 天订阅额度。',
       refreshQuota: '刷新额度',
       refreshingQuota: '正在读取额度…',
@@ -284,6 +294,7 @@ window.__ModuleLoader__.load({
         added: stringList(value.added, 'added'),
         kept: stringList(value.kept, 'kept'),
         removed: stringList(value.removed, 'removed'),
+        pinnedKept: stringList(value.pinnedKept, 'pinnedKept'),
         applied: value.applied,
         changed: value.changed,
         syncToken: value.syncToken,
@@ -318,11 +329,29 @@ window.__ModuleLoader__.load({
         || typeof value.checkedAt !== 'string' || !Number.isFinite(Date.parse(value.checkedAt))) {
         throw new Error('Invalid Kimi Coding quota result')
       }
+      const parseTrend = (trend) => {
+        if (trend === null || typeof trend !== 'object' || Array.isArray(trend)
+          || !Array.isArray(trend.rolling) || !Array.isArray(trend.weekly)
+          || trend.rolling.some(item => typeof item !== 'number' || !Number.isFinite(item))
+          || trend.weekly.some(item => typeof item !== 'number' || !Number.isFinite(item))
+          || !(trend.rollingHoursToExhaustion === null
+            || (typeof trend.rollingHoursToExhaustion === 'number' && Number.isFinite(trend.rollingHoursToExhaustion)))
+          || !(trend.weeklyHoursToExhaustion === null
+            || (typeof trend.weeklyHoursToExhaustion === 'number' && Number.isFinite(trend.weeklyHoursToExhaustion)))) {
+          throw new Error('Invalid Kimi Coding quota trend')
+        }
+        return {
+          rolling: [...trend.rolling], weekly: [...trend.weekly],
+          rollingHoursToExhaustion: trend.rollingHoursToExhaustion,
+          weeklyHoursToExhaustion: trend.weeklyHoursToExhaustion,
+        }
+      }
       return {
         checkedAt: value.checkedAt,
         rolling: parseQuotaWindow(value.rolling, 'rolling'),
         weekly: parseQuotaWindow(value.weekly, 'weekly'),
         ...typeof value.membership === 'string' ? { membership: value.membership } : {},
+        ...value.trend === undefined ? {} : { trend: parseTrend(value.trend) },
       }
     }
     const usageCodec = {
@@ -410,6 +439,16 @@ window.__ModuleLoader__.load({
       if (typeof value !== 'string') throw new Error('confirmation must be a string')
       return value
     }
+    const forceCodec = {
+      mode: 'strict', typeSymbol: 'dsh-kimi-coding-models#Force',
+      schema: { parse: (value) => {
+        if (typeof value !== 'boolean') throw new Error('force must be a boolean')
+        return value
+      } }, create: () => ({ parse: (value) => {
+        if (typeof value !== 'boolean') throw new Error('force must be a boolean')
+        return value
+      } }),
+    }
     const confirmationCodec = {
       mode: 'strict', typeSymbol: 'dsh-kimi-coding-models#Confirmation',
       schema: { parse: parseConfirmation }, create: () => ({ parse: parseConfirmation }),
@@ -426,7 +465,10 @@ window.__ModuleLoader__.load({
         {
           id: 'dsh-kimi-coding-models#kimiCodingModels/usage',
           service: 'kimiCodingModels', namespace: 'kimiCodingModels', method: 'usage',
-          invocation: { kind: 'direct' }, parameters: [],
+          invocation: { kind: 'direct' },
+          parameters: [
+            { name: 'force', wire: 'force', source: 'json', codec: forceCodec },
+          ],
           cancellation: { parameter: 'signal' }, result: usageCodec,
         },
         {
@@ -491,6 +533,7 @@ window.__ModuleLoader__.load({
       modelId: { color: 'var(--dsw-alias-label-tertiary)', fontSize: 11, fontFamily: 'monospace', overflowWrap: 'anywhere' },
       limitFields: { display: 'flex', flexWrap: 'wrap', gap: 12, flex: 'none' },
       limitField: { display: 'grid', gap: 4 },
+      pinButton: { appearance: 'none', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, padding: '2px 4px', flex: 'none', opacity: 0.75 },
       badge: {
         flex: 'none', padding: '2px 7px', borderRadius: 6, fontSize: 11,
         color: 'var(--dsw-alias-label-secondary)', background: 'var(--dsw-alias-interactive-bg-hover)',
@@ -645,6 +688,7 @@ window.__ModuleLoader__.load({
           h('div', { style: styles.footer }, `${t('endpoint')}: ${result.endpoint}`),
           h('div', { style: styles.footer }, `${t('checkedAt')}: ${new Date(result.checkedAt).toLocaleString(props.getLocale?.())}`),
           result.removed.length > 0 ? h('p', { style: styles.status }, `${t('removed')}: ${result.removed.join(', ')}`) : null,
+          result.pinnedKept.length > 0 ? h('p', { style: styles.status }, `${t('pinnedKept')}: ${result.pinnedKept.join(', ')}`) : null,
           h('div', null,
             h('h3', { style: { ...styles.heading, fontSize: 13, marginBottom: 8 } }, `${t('models')} (${result.live.length})`),
             h('div', { style: styles.modelList }, result.live.map((model) => {
@@ -665,6 +709,27 @@ window.__ModuleLoader__.load({
         status: 'loading', models: [], draft: {}, error: null, saving: false, saved: false,
       })
       const mounted = React.useRef(true)
+      const form = props.form
+      const formSnap = React.useSyncExternalStore(
+        listener => form.subscribe(listener),
+        () => form.getSnapshot(),
+        () => form.getSnapshot(),
+      )
+      const pinnedIds = new Set(Array.isArray(formSnap.value?.pinnedModels) ? formSnap.value.pinnedModels : [])
+      const togglePin = async (id) => {
+        const next = pinnedIds.has(id) ? [...pinnedIds].filter(item => item !== id) : [...pinnedIds, id]
+        const snapshot = form.getSnapshot()
+        if (snapshot.status !== 'ready' || !snapshot.writable) return
+        try {
+          const accepted = await form.mutate([{ op: 'set', path: ['pinnedModels'], value: next }], snapshot.revision)
+          if (!accepted) setState(previous => ({ ...previous, error: t('saveConflict'), saved: false }))
+        } catch (error) {
+          setState(previous => ({
+            ...previous,
+            error: error instanceof Error ? error.message : String(error),
+          }))
+        }
+      }
       const load = async () => {
         setState(previous => ({ ...previous, status: 'loading', error: null, saved: false }))
         try {
@@ -765,8 +830,18 @@ window.__ModuleLoader__.load({
             ? state.error ? null : h('p', { style: styles.status }, t('modelCapsEmpty'))
             : h('div', { style: styles.modelList }, state.models.map(model => h('div', { key: model.id, style: styles.modelRow },
               h('div', { style: { minWidth: 0, flex: '1 1 180px' } },
-                h('div', { style: styles.modelName }, model.name ?? model.id),
+                h('div', { style: styles.modelName }, model.name ?? model.id,
+                  pinnedIds.has(model.id) ? h('span', { style: styles.badge }, t('pinnedBadge')) : null),
                 h('div', { style: styles.modelId }, model.id)),
+              h('button', {
+                type: 'button',
+                title: t(pinnedIds.has(model.id) ? 'unpinModel' : 'pinModel'),
+                'aria-label': t(pinnedIds.has(model.id) ? 'unpinModel' : 'pinModel'),
+                'aria-pressed': pinnedIds.has(model.id),
+                disabled: formSnap.status !== 'ready' || !formSnap.writable,
+                style: styles.pinButton,
+                onClick: () => { void togglePin(model.id) },
+              }, pinnedIds.has(model.id) ? '\u{1F512}' : '\u{1F513}'),
               h('div', { style: styles.limitFields },
                 limitField(model, 'contextWindow', t('contextWindow')),
                 limitField(model, 'maxTokens', t('maxOutput')))))))
@@ -797,7 +872,26 @@ window.__ModuleLoader__.load({
       return `${t('resetInPrefix')}${parts.join(t('durationJoin'))}${t('resetInSuffix')}`
     }
 
-    function QuotaWindow({ t, label, value, getLocale }) {
+    function Sparkline({ points, label }) {
+      if (!Array.isArray(points) || points.length < 2) return null
+      const width = 120; const height = 22; const pad = 2
+      const step = (width - 2 * pad) / (points.length - 1)
+      const coords = points.map((point, index) => {
+        const x = pad + index * step
+        const y = height - pad - (Math.max(0, Math.min(100, point)) / 100) * (height - 2 * pad)
+        return `${x.toFixed(1)},${y.toFixed(1)}`
+      })
+      return h('svg', {
+        width, height, viewBox: `0 0 ${width} ${height}`, role: 'img',
+        'aria-label': `${label} trend`,
+      }, h('polyline', {
+        points: coords.join(' '), fill: 'none',
+        stroke: 'var(--dsw-alias-state-business-primary)', strokeWidth: 1.5,
+        strokeLinejoin: 'round', strokeLinecap: 'round',
+      }))
+    }
+
+    function QuotaWindow({ t, label, value, getLocale, spark, exhaustionHours }) {
       const now = useNow()
       const percent = Math.max(0, Math.min(100, value.usedPercent))
       const resetsAt = new Date(value.resetAt).toLocaleString(getLocale?.())
@@ -810,6 +904,9 @@ window.__ModuleLoader__.load({
           style: styles.progress, role: 'progressbar', 'aria-label': label,
           'aria-valuemin': 0, 'aria-valuemax': 100, 'aria-valuenow': Math.round(percent * 10) / 10,
         }, h('div', { style: { ...styles.progressFill, width: `${percent}%` } })),
+        h(Sparkline, { points: spark, label }),
+        exhaustionHours === null || exhaustionHours === undefined ? null
+          : h('p', { style: styles.hint }, t('exhaustionIn').replace('{h}', String(Math.round(exhaustionHours)))),
         h('p', { style: styles.hint }, `${t('resetsAt')}: ${resetsAt}${countdown === '' ? '' : ` (${countdown})`}`))
     }
 
@@ -841,7 +938,7 @@ window.__ModuleLoader__.load({
         activeController.current = controller
         setState(previous => ({ ...previous, busy: true, error: null, stale: false }))
         try {
-          const result = await props.usage(controller.signal)
+          const result = await props.usage(true, controller.signal)
           if (mounted.current && activeController.current === controller) {
             setState({ busy: false, result, error: null, stale: false })
           }
@@ -867,8 +964,14 @@ window.__ModuleLoader__.load({
         state.stale ? h('p', { style: styles.hint }, t('staleResult')) : null,
         result ? h(React.Fragment, null,
           h('div', { style: styles.quotaGrid },
-            h(QuotaWindow, { t, label: t('rollingQuota'), value: result.rolling, getLocale: props.getLocale }),
-            h(QuotaWindow, { t, label: t('weeklyQuota'), value: result.weekly, getLocale: props.getLocale })),
+            h(QuotaWindow, {
+              t, label: t('rollingQuota'), value: result.rolling, getLocale: props.getLocale,
+              spark: result.trend?.rolling, exhaustionHours: result.trend?.rollingHoursToExhaustion,
+            }),
+            h(QuotaWindow, {
+              t, label: t('weeklyQuota'), value: result.weekly, getLocale: props.getLocale,
+              spark: result.trend?.weekly, exhaustionHours: result.trend?.weeklyHoursToExhaustion,
+            })),
           result.membership ? h('p', { style: styles.status }, `${t('membership')}: ${result.membership}`) : null,
           h('div', { style: styles.footer }, `${t('checkedAt')}: ${new Date(result.checkedAt).toLocaleString(props.getLocale?.())}`)) : null)
     }
@@ -1127,7 +1230,7 @@ window.__ModuleLoader__.load({
           const timeout = setTimeout(() => controller.abort(), 30_000)
           setState(previous => ({ ...previous, refreshing: true }))
           try {
-            const usage = await props.usage(controller.signal)
+            const usage = await props.usage(manual, controller.signal)
             if (alive) setState({ usage, error: null, refreshing: false })
           } catch (error) {
             if (alive) setState(previous => ({
@@ -1200,8 +1303,14 @@ window.__ModuleLoader__.load({
         state.error ? h('div', { role: 'alert', style: styles.error }, `${t('operationFailed')}: ${state.error}`) : null,
         state.error && usage ? h('div', { style: styles.hint }, t('staleResult')) : null,
         usage ? h('div', { style: { display: 'grid', gap: 12 } },
-          h(QuotaWindow, { t, label: t('rollingQuota'), value: usage.rolling, getLocale: props.getLocale }),
-          h(QuotaWindow, { t, label: t('weeklyQuota'), value: usage.weekly, getLocale: props.getLocale }),
+          h(QuotaWindow, {
+            t, label: t('rollingQuota'), value: usage.rolling, getLocale: props.getLocale,
+            spark: usage.trend?.rolling, exhaustionHours: usage.trend?.rollingHoursToExhaustion,
+          }),
+          h(QuotaWindow, {
+            t, label: t('weeklyQuota'), value: usage.weekly, getLocale: props.getLocale,
+            spark: usage.trend?.weekly, exhaustionHours: usage.trend?.weeklyHoursToExhaustion,
+          }),
           h('div', { style: styles.footer }, `${t('checkedAt')}: ${new Date(usage.checkedAt).toLocaleString(props.getLocale?.())}`)) : null) : null)
     }
 
@@ -1231,7 +1340,7 @@ window.__ModuleLoader__.load({
           }
           const check = signal => call('read', signal)
           const sync = (confirmation, signal) => call('sync', true, confirmation, signal)
-          const usage = (signal) => call('usage', signal)
+          const usage = (force, signal) => call('usage', force, signal)
           const models = () => call('models')
           const saveModels = (input) => call('saveModels', input)
           const injected = () => ({

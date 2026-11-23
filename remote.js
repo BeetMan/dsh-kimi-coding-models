@@ -41,6 +41,7 @@ export function parseSyncResult(value) {
     added: stringList(value.added, 'added'),
     kept: stringList(value.kept, 'kept'),
     removed: stringList(value.removed, 'removed'),
+    pinnedKept: stringList(value.pinnedKept, 'pinnedKept'),
     applied: value.applied,
     changed: value.changed,
     syncToken: value.syncToken,
@@ -131,6 +132,27 @@ function parseQuotaWindow(value, field) {
   return result
 }
 
+/** Validate one wire-level trend series pair and its projections. */
+function parseTrend(value) {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)
+    || !Array.isArray(value.rolling) || !Array.isArray(value.weekly)) {
+    throw new Error('Invalid Kimi Coding quota trend')
+  }
+  for (const key of ['rolling', 'weekly']) {
+    if (value[key].some(item => typeof item !== 'number' || !Number.isFinite(item))) {
+      throw new Error(`Invalid Kimi Coding quota trend ${key}`)
+    }
+  }
+  const hours = {}
+  for (const key of ['rollingHoursToExhaustion', 'weeklyHoursToExhaustion']) {
+    if (value[key] !== null && (typeof value[key] !== 'number' || !Number.isFinite(value[key]))) {
+      throw new Error(`Invalid Kimi Coding quota trend ${key}`)
+    }
+    hours[key] = value[key]
+  }
+  return { rolling: [...value.rolling], weekly: [...value.weekly], ...hours }
+}
+
 /** Validate and detach one quota snapshot crossing the Remote boundary. */
 export function parseUsageResult(value) {
   if (value === null || typeof value !== 'object' || Array.isArray(value)
@@ -142,6 +164,7 @@ export function parseUsageResult(value) {
     rolling: parseQuotaWindow(value.rolling, 'rolling'),
     weekly: parseQuotaWindow(value.weekly, 'weekly'),
     ...typeof value.membership === 'string' ? { membership: value.membership } : {},
+    ...value.trend === undefined ? {} : { trend: parseTrend(value.trend) },
   }
 }
 
@@ -186,6 +209,19 @@ const applyCodec = {
   } }),
 }
 
+const forceCodec = {
+  mode: 'strict',
+  typeSymbol: 'dsh-kimi-coding-models#Force',
+  schema: { parse: (value) => {
+    if (typeof value !== 'boolean') throw new Error('force must be a boolean')
+    return value
+  } },
+  create: () => ({ parse: (value) => {
+    if (typeof value !== 'boolean') throw new Error('force must be a boolean')
+    return value
+  } }),
+}
+
 const confirmationCodec = {
   mode: 'strict',
   typeSymbol: 'dsh-kimi-coding-models#Confirmation',
@@ -221,7 +257,9 @@ export const REMOTE = {
       namespace: 'kimiCodingModels',
       method: 'usage',
       invocation: { kind: 'direct' },
-      parameters: [],
+      parameters: [
+        { name: 'force', wire: 'force', source: 'json', codec: forceCodec },
+      ],
       cancellation: { parameter: 'signal' },
       result: usageCodec,
     },

@@ -5,10 +5,13 @@
  */
 import { createRequire } from 'node:module'
 import { existsSync } from 'node:fs'
-import { join } from 'node:path'
+import { readFile, writeFile, mkdir } from 'node:fs/promises'
+import { homedir } from 'node:os'
+import { dirname, join } from 'node:path'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { REMOTE } from './remote.js'
 import { limitsOf } from './kimi-limits.js'
+import { appendSample, trendView } from './quota-trend.js'
 import { AUTO_SYNC_TICK_MS, MAX_SYNC_INTERVAL_MINUTES, isAutoSyncDue } from './auto-sync.js'
 import { applyModelSettings, applySyncPlanToConfig, createSyncPlan, isSyncConfirmationCurrent } from './sync-plan.js'
 
@@ -101,6 +104,8 @@ const fields = {
   chatQuotaBorder: z.boolean().default(true),
   /** Kimi Code platform whose endpoint presets the Settings page offers. */
   platform: z.union([z.const('china'), z.const('global')]).default('china'),
+  /** Model ids that survive synchronization even when the catalog drops them. */
+  pinnedModels: z.array(z.string()).default([]),
 }
 
 /** Plain schema used for diagnostics and non-Loader callers. */
@@ -381,6 +386,7 @@ async function sync(ctx, config, apply, signal, options = {}) {
     added: plan.added,
     kept: plan.kept,
     removed: plan.removed,
+    pinnedKept: plan.pinnedKept,
     applied: write,
     changed: plan.changed,
     syncToken: plan.syncToken,
@@ -403,9 +409,9 @@ class KimiCodingModelsService extends TypertRemoteService {
     }
   }
 
-  async usage(signal) {
+  async usage(force, signal) {
     try {
-      return await this.options.usage(signal)
+      return await this.options.usage(force, signal)
     } catch (error) {
       throw remoteFailure(error)
     }
@@ -460,6 +466,7 @@ function formatReport(value) {
       : 'Wrote the live catalog into the route configuration.')
     lines.push('The model selector now offers every model above.')
     if (value.removed.length > 0) lines.push(`Dropped (no longer published): ${value.removed.join(', ')}`)
+    if (value.pinnedKept.length > 0) lines.push(`Pinned, kept although no longer published: ${value.pinnedKept.join(', ')}`)
   } else {
     if (value.added.length > 0) lines.push(`Not served yet: ${value.added.join(', ')}`)
     if (value.removed.length > 0) lines.push(`Configured or served but no longer published: ${value.removed.join(', ')}`)
@@ -498,6 +505,12 @@ function formatUsageReport(value) {
     format('7-day quota', value.weekly),
     `Checked ${value.checkedAt}`,
   ]
+  if (value.trend?.rollingHoursToExhaustion != null) {
+    lines.push(`At the current pace the 5-hour window fills in ~${Math.round(value.trend.rollingHoursToExhaustion)}h.`)
+  }
+  if (value.trend?.weeklyHoursToExhaustion != null) {
+    lines.push(`At the current pace the 7-day window fills in ~${Math.round(value.trend.weeklyHoursToExhaustion)}h.`)
+  }
   if (value.membership !== undefined) lines.push(`Membership: ${value.membership}`)
   return lines.join('\n')
 }
@@ -561,7 +574,50 @@ export function apply(ctx, config) {
     }
   }
   const operation = (apply, signal, options) => runSync(apply, signal, options)
-  const usage = signal => readUsage(ctx, current(), signal)
+  // Short-TTL cache so agent loops and the per-minute pill refresh share one
+  // upstream read; callers pass force for an explicit refresh.
+  let usageCache
+  const historyFile = join(homedir(), '.dsh', 'kimi-coding-quota-history.json')
+  let historyState
+  const loadHistory = async () => {
+    if (historyState === undefined) {
+      try {
+        const parsed = JSON.parse(await readFile(historyFile, 'utf8'))
+        historyState = { samples: Array.isArray(parsed?.samples) ? parsed.samples : [] }
+      } catch {
+        historyState = { samples: [] }
+      }
+    }
+    return historyState
+  }
+  const recordSample = async (value) => {
+    try {
+      const history = await loadHistory()
+      const now = Date.parse(value.checkedAt)
+      const last = history.samples[history.samples.length - 1]
+      if (!Number.isFinite(now) || (last && now - last.t < 45_000)) return
+      history.samples = appendSample(history.samples, {
+        t: now,
+        rollingPercent: value.rolling.usedPercent,
+        weeklyPercent: value.weekly.usedPercent,
+      }, now)
+      await mkdir(dirname(historyFile), { recursive: true })
+      await writeFile(historyFile, JSON.stringify({ version: 1, samples: history.samples }), 'utf8')
+    } catch {
+      // History is advisory; it must never break a quota read.
+    }
+  }
+  const usage = async (force, signal) => {
+    const key = JSON.stringify([current().usageEndpoint, current().apiKeyEnv])
+    const now = Date.now()
+    if (!force && usageCache?.key === key && now - usageCache.at < 60_000) return usageCache.value
+    const value = await readUsage(ctx, current(), signal)
+    usageCache = { key, at: now, value }
+    const history = await loadHistory()
+    const trend = trendView(history.samples)
+    void recordSample(value)
+    return trend === undefined ? value : { ...value, trend }
+  }
 
   ctx.inject(['typert'], (scope) => {
     scope.effect(() => scope.typert.register({
@@ -601,7 +657,7 @@ export function apply(ctx, config) {
       schema: {
         type: 'object',
         additionalProperties: false,
-        required: ['provider', 'endpoint', 'checkedAt', 'live', 'served', 'added', 'kept', 'removed', 'applied', 'changed', 'syncToken', 'confirmationStale'],
+        required: ['provider', 'endpoint', 'checkedAt', 'live', 'served', 'added', 'kept', 'removed', 'pinnedKept', 'applied', 'changed', 'syncToken', 'confirmationStale'],
         properties: {
           provider: { type: 'string' },
           endpoint: { type: 'string' },
@@ -622,6 +678,7 @@ export function apply(ctx, config) {
           added: { type: 'array', items: { type: 'string' } },
           kept: { type: 'array', items: { type: 'string' } },
           removed: { type: 'array', items: { type: 'string' } },
+          pinnedKept: { type: 'array', items: { type: 'string' } },
           applied: { type: 'boolean' },
           changed: { type: 'boolean' },
           syncToken: { type: 'string' },
@@ -638,8 +695,18 @@ export function apply(ctx, config) {
   ctx.tools.register({
     name: 'kimi_coding_usage',
     description: "Read the current Kimi Coding subscription quota: the 5-hour rolling window and 7-day quota, "
-      + 'including used percentage, remaining amount, and reset times. This is read-only.',
-    parameters: { type: 'object', additionalProperties: false, properties: {} },
+      + 'including used percentage, reset times, and trend. Results are cached for 60 seconds; pass force to bypass. '
+      + 'This is read-only.',
+    parameters: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        force: {
+          type: 'boolean',
+          description: 'Skip the 60-second cache and read the quota endpoint again.',
+        },
+      },
+    },
     output: {
       schema: {
         type: 'object',
@@ -650,6 +717,17 @@ export function apply(ctx, config) {
           rolling: QUOTA_WINDOW_SCHEMA,
           weekly: QUOTA_WINDOW_SCHEMA,
           membership: { type: 'string' },
+          trend: {
+            type: 'object',
+            additionalProperties: false,
+            required: ['rolling', 'weekly', 'rollingHoursToExhaustion', 'weeklyHoursToExhaustion'],
+            properties: {
+              rolling: { type: 'array', items: { type: 'number' } },
+              weekly: { type: 'array', items: { type: 'number' } },
+              rollingHoursToExhaustion: { oneOf: [{ type: 'number' }, { type: 'null' }] },
+              weeklyHoursToExhaustion: { oneOf: [{ type: 'number' }, { type: 'null' }] },
+            },
+          },
         },
       },
       render: (_args, value) => [{ type: 'text', text: formatUsageReport(value) }],
@@ -657,7 +735,7 @@ export function apply(ctx, config) {
     },
     timeoutMs: 30_000,
     isConcurrencySafe: () => true,
-    execute: async (_args, exec) => usage(exec.signal),
+    execute: async (args, exec) => usage(args?.force === true, exec.signal),
   })
 
   ctx.tools.register({

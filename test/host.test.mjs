@@ -25,6 +25,7 @@ test('Host catalog and quota operations', { skip: !process.env.DSH_INSTALL_DIR &
     syncOnStart: false,
     syncIntervalMinutes: 0,
     platform: 'china',
+    pinnedModels: [],
     showChatQuota: true,
     chatQuotaStyle: 'badge',
     chatQuotaBorder: true,

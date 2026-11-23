@@ -7,9 +7,9 @@ A DeepSeek Harness bundle that keeps the `kimi-coding` route aligned with Kimi C
 - **Settings → Kimi Coding** page with manual **Check for updates** and **Sync models now** actions.
 - Optional **interval synchronization**: one background sync per configured interval (1–10080 minutes; `0` disables it) while DSH runs, alongside the existing startup sync.
 - Live model comparison, newly added and removed model reporting, actionable errors, and consistent `Kimi`-prefixed selector names.
-- **Per-model limits**: set the context window (maximum input) and output cap for each model in the route; leave a field empty to inherit the `pi-ai` 1.6.0 default. Synchronization preserves explicit limits.
+- **Per-model limits**: set the context window (maximum input) and output cap for each model in the route; leave a field empty to inherit the `pi-ai` 1.6.0 default. Synchronization preserves explicit limits, and a per-model pin keeps user-added models even when the catalog drops them.
 - Snapshot-bound removal confirmation, complete configured/served removal reporting, and bounded cancellable catalog requests.
-- **5-hour rolling** and **7-day** subscription quota display with used percentage, reset time, and a live countdown to that reset.
+- **5-hour rolling** and **7-day** subscription quota display with used percentage, reset time, a live countdown, a sampled mini trend, and a pace-based exhaustion estimate.
 - A compact **chat-window quota pill** while the conversation uses `kimi-coding`, with a detail popover, manual refresh, and one-minute automatic refresh while visible.
 - Six persisted pill styles — **badge**, **plain text**, **dual progress bars**, **progress ring**, **single progress bar**, and **status dot** (colored by usage) — plus an independent border toggle, with live previews in Settings.
 - Agent tools: `kimi_coding_models`, `kimi_coding_usage`, and `kimi_coding_model_settings`.

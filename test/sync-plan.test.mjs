@@ -98,6 +98,34 @@ test('a null limit restores inheritance and unknown ids are rejected', () => {
   assert.throws(() => applyModelSettings(undefined, [{ id: 'k3', maxTokens: 1 }]), /no kimi-coding model list/)
 })
 
+test('pinned models survive a full sync and are not reported as removed', () => {
+  const route = { models: [{ id: 'custom-local', name: 'Local custom model', maxTokens: 8192 }, { id: 'k3' }] }
+  const plan = createSyncPlan(live, route, ['custom-local', 'k3'], { ...config, pinnedModels: ['custom-local'] })
+  assert.deepEqual(plan.removed, [])
+  assert.deepEqual(plan.pinnedKept, ['custom-local'])
+  assert.deepEqual(plan.route.models.map(model => model.id), ['k3', 'k3.1-pro', 'custom-local'])
+  assert.equal(plan.route.models[2].maxTokens, 8192)
+  const applied = applySyncPlanToConfig({ providers: { 'kimi-coding': route } }, plan)
+  assert.deepEqual(applied.providers['kimi-coding'].models.map(model => model.id), ['k3', 'k3.1-pro', 'custom-local'])
+})
+
+test('a pinned served-only model drops to a bare entry', () => {
+  const route = { models: [{ id: 'k3' }] }
+  const plan = createSyncPlan(live, route, ['k3', 'served-legacy'], { ...config, pinnedModels: ['served-legacy'] })
+  assert.deepEqual(plan.pinnedKept, ['served-legacy'])
+  assert.equal(plan.route.models.at(-1).id, 'served-legacy')
+  assert.equal(Object.keys(plan.route.models.at(-1)).length, 1)
+  assert.deepEqual(plan.removed, [])
+})
+
+test('the confirmation token binds to the pinned list', () => {
+  const route = { models: [{ id: 'k3' }, { id: 'custom-local' }] }
+  const pinned = createSyncPlan(live, route, ['k3'], { ...config, pinnedModels: ['custom-local'] })
+  const unpinned = createSyncPlan(live, route, ['k3'], config)
+  assert.notEqual(pinned.syncToken, unpinned.syncToken)
+  assert.equal(isSyncConfirmationCurrent(pinned, unpinned.syncToken), false)
+})
+
 test('final write accepts only the route snapshot used by the plan', () => {
   const route = { api: 'openai-completions', models: [{ id: 'k3' }] }
   const current = { providers: { 'kimi-coding': route }, untouched: { keep: true } }
@@ -116,6 +144,7 @@ test('Remote result carries the confirmation token and stale marker', () => {
   const value = {
     provider: 'kimi-coding', endpoint: config.endpoint, checkedAt: new Date().toISOString(),
     live: [{ id: 'k3', name: 'Kimi K3' }], served: ['k3'], added: [], kept: ['k3'], removed: [],
+    pinnedKept: [],
     applied: false, changed: false, syncToken: 'abc123', confirmationStale: false,
   }
   const parsed = parseSyncResult(value)

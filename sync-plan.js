@@ -81,6 +81,7 @@ export function createSyncPlan(live, currentRoute, served, config) {
     if (entry !== null && typeof entry === 'object' && typeof entry.id === 'string') written.set(entry.id, entry)
   }
   const servedSet = new Set(served)
+  const pinned = new Set(Array.isArray(config.pinnedModels) ? config.pinnedModels : [])
   const models = live.map((model) => {
     const kept = written.get(model.id)
     if (kept !== undefined) {
@@ -103,9 +104,19 @@ export function createSyncPlan(live, currentRoute, served, config) {
   const liveIds = new Set(live.map(model => model.id))
   const configuredIds = [...written.keys()]
   const currentIds = [...new Set([...configuredIds, ...served])]
+  // Pinned models survive a full sync even when the catalog no longer lists
+  // them: configured entries keep their fields, served-only ones drop to a
+  // bare entry, and neither is reported as removed.
+  const pinnedKept = []
+  for (const id of currentIds) {
+    if (!pinned.has(id) || liveIds.has(id)) continue
+    const kept = written.get(id)
+    models.push(kept !== undefined ? kept : { id })
+    pinnedKept.push(id)
+  }
   const added = live.filter(model => !servedSet.has(model.id)).map(model => model.id)
   const kept = live.filter(model => servedSet.has(model.id)).map(model => model.id)
-  const removed = currentIds.filter(id => !liveIds.has(id))
+  const removed = currentIds.filter(id => !liveIds.has(id) && !pinned.has(id))
   const unchanged = existing !== undefined
     && existing.length === models.length
     && existing.every((entry, index) => entry?.id === models[index]?.id && entry?.name === models[index]?.name)
@@ -122,6 +133,7 @@ export function createSyncPlan(live, currentRoute, served, config) {
     added,
     kept,
     removed,
+    pinnedKept,
     changed,
     route,
     expectedRouteFingerprint,
@@ -129,6 +141,7 @@ export function createSyncPlan(live, currentRoute, served, config) {
       expectedRouteFingerprint,
       endpoint: config.endpoint,
       credentialRef: config.apiKeyEnv,
+      pinned: [...pinned].sort(),
       served: [...served].sort(),
       route,
     }),
