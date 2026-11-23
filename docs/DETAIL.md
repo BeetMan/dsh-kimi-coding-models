@@ -34,7 +34,8 @@ The pill reads once when it appears and then once per minute while the page is v
 pages skip background reads. Requests are bounded to 30 seconds and cancelled on component
 cleanup, so a stalled request cannot lock later refreshes. A failed refresh retains the previous
 result with an explicit stale notice. Switching away from `kimi-coding` hides the pill. **Show quota in the chat window** in
-Settings controls this integration.
+Settings controls this integration. **Chat quota style** offers a bordered badge, plain text, or
+compact dual progress bars, with a live preview before saving.
 
 ## Settings page
 
@@ -60,6 +61,7 @@ The settings area edits the plugin's persisted profile configuration:
 | Default output tokens | `32768` | Output cap when a new model's listing discloses none |
 | Sync when DSH starts | off | One background sync on the next plugin activation |
 | Show quota in the chat window | on | Compact model-aware quota pill with one-minute refresh |
+| Chat quota style | `badge` | Bordered badge, plain text, or dual progress bars |
 
 Changes are staged until **Save settings**. Validation rejects non-HTTP(S) endpoints, malformed
 credential names, and non-positive output caps. Saves carry the draft's starting revision: a

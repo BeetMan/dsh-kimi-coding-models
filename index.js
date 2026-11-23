@@ -81,6 +81,8 @@ const fields = {
   syncOnStart: z.boolean().default(false),
   /** Show the quota pill while the conversation uses the kimi-coding route. */
   showChatQuota: z.boolean().default(true),
+  /** Visual treatment of the chat quota pill. */
+  chatQuotaStyle: z.union([z.const('badge'), z.const('plain'), z.const('bars')]).default('badge'),
 }
 
 /** Plain schema used for diagnostics and non-Loader callers. */

@@ -13,6 +13,11 @@ window.__ModuleLoader__.load({
       defaultMaxTokens: 32768,
       syncOnStart: false,
       showChatQuota: true,
+      chatQuotaStyle: 'badge',
+    }
+    const PREVIEW_QUOTA = {
+      rolling: { usedPercent: 18 },
+      weekly: { usedPercent: 32 },
     }
 
     const en = {
@@ -68,6 +73,12 @@ window.__ModuleLoader__.load({
       chatLoading: '…',
       chatUnavailable: 'Quota unavailable',
       quotaTimeout: 'Quota request timed out. Try refreshing again.',
+      chatQuotaStyle: 'Chat quota style',
+      chatQuotaStyleHint: 'Choose the appearance of the quota indicator in the chat input.',
+      chatQuotaStyle_badge: 'Badge (default)',
+      chatQuotaStyle_plain: 'Plain text',
+      chatQuotaStyle_bars: 'Dual progress bars',
+      stylePreview: 'Preview',
       save: 'Save settings',
       saving: 'Saving…',
       discard: 'Discard changes',
@@ -137,6 +148,12 @@ window.__ModuleLoader__.load({
       chatLoading: '…',
       chatUnavailable: '额度不可用',
       quotaTimeout: '额度请求超时，请重新刷新。',
+      chatQuotaStyle: '聊天额度样式',
+      chatQuotaStyleHint: '选择聊天输入框中额度指示器的外观。',
+      chatQuotaStyle_badge: '徽章（默认）',
+      chatQuotaStyle_plain: '纯文本',
+      chatQuotaStyle_bars: '双进度条',
+      stylePreview: '预览',
       save: '保存设置',
       saving: '正在保存…',
       discard: '放弃修改',
@@ -311,13 +328,32 @@ window.__ModuleLoader__.load({
       quotaHead: { display: 'flex', justifyContent: 'space-between', gap: 10, fontSize: 13, fontWeight: 500 },
       progress: { height: 6, borderRadius: 99, overflow: 'hidden', background: 'var(--dsw-alias-bg-skeleton)' },
       progressFill: { height: '100%', borderRadius: 99, background: 'var(--dsw-alias-state-business-primary)' },
-      chatRoot: { position: 'relative', display: 'inline-flex', maxWidth: '100%', fontFamily: 'inherit' },
+      chatRoot: { position: 'relative', display: 'inline-flex', maxWidth: '100%', minWidth: 0, fontFamily: 'inherit' },
       chatTrigger: {
         appearance: 'none', display: 'inline-flex', alignItems: 'center', gap: 5,
-        maxWidth: '100%', border: '1px solid var(--dsw-alias-border-l2)', borderRadius: 999,
+        maxWidth: '100%', minWidth: 0, overflow: 'hidden', border: '1px solid var(--dsw-alias-border-l2)', borderRadius: 999,
         background: 'var(--dsw-alias-button-elevated-fill)', color: 'var(--dsw-alias-label-secondary)',
         padding: '5px 9px', font: 'inherit', fontSize: 11.5, lineHeight: 1.5, cursor: 'pointer',
         whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums',
+      },
+      chatTriggerPlain: {
+        appearance: 'none', display: 'inline-flex', alignItems: 'center', gap: 5,
+        maxWidth: '100%', minWidth: 0, overflow: 'hidden', border: 'none', background: 'none',
+        color: 'var(--dsw-alias-label-tertiary)', padding: '4px 6px', font: 'inherit',
+        fontSize: 11.5, lineHeight: 1.5, cursor: 'pointer', whiteSpace: 'nowrap',
+        fontVariantNumeric: 'tabular-nums',
+      },
+      chatBars: { display: 'inline-flex', alignItems: 'center', gap: 9, minWidth: 0, maxWidth: '100%', overflow: 'hidden' },
+      chatBarGroup: { display: 'inline-flex', alignItems: 'center', gap: 4, minWidth: 0 },
+      chatBarTrack: {
+        display: 'inline-block', width: 22, minWidth: 6, flex: '0 1 22px', height: 4, borderRadius: 99,
+        overflow: 'hidden', background: 'var(--dsw-alias-bg-skeleton)',
+      },
+      chatBarFill: { display: 'block', height: '100%', background: 'var(--dsw-alias-state-business-primary)' },
+      chatText: { minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' },
+      stylePreview: {
+        display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 12, minWidth: 0, padding: 12, borderRadius: 8,
+        background: 'var(--dsw-alias-interactive-bg-hover)', color: 'var(--dsw-alias-label-secondary)',
       },
       chatPanel: {
         position: 'absolute', bottom: 'calc(100% + 8px)', right: 0, zIndex: 40,
@@ -557,6 +593,20 @@ window.__ModuleLoader__.load({
         h('div', null,
           h('label', { htmlFor: `kimi-coding-${field}`, style: styles.label }, t(field)),
           h('p', { id: `kimi-coding-${field}-hint`, style: styles.hint }, t(`${field}Hint`))))
+      const styleField = () => h('div', { style: styles.field },
+        h('label', { style: styles.label, htmlFor: 'kimi-coding-chatQuotaStyle' }, t('chatQuotaStyle')),
+        h('select', {
+          id: 'kimi-coding-chatQuotaStyle', style: styles.input, value: values.chatQuotaStyle, disabled,
+          'aria-describedby': 'kimi-coding-chatQuotaStyle-hint',
+          onChange: event => edit('chatQuotaStyle', event.target.value),
+        }, ['badge', 'plain', 'bars'].map(style => h('option', { key: style, value: style }, t(`chatQuotaStyle_${style}`)))),
+        h('p', { id: 'kimi-coding-chatQuotaStyle-hint', style: styles.hint }, t('chatQuotaStyleHint')),
+        h('div', { style: styles.stylePreview },
+          h('span', { style: styles.hint }, t('stylePreview')),
+          h('span', {
+            'aria-hidden': true,
+            style: { ...(values.chatQuotaStyle === 'plain' ? styles.chatTriggerPlain : styles.chatTrigger), cursor: 'default' },
+          }, h(ChatQuotaTriggerContent, { t, style: values.chatQuotaStyle, usage: PREVIEW_QUOTA }))))
       return h('section', { style: styles.card, 'aria-labelledby': 'kimi-coding-settings-title' },
         h('h2', { id: 'kimi-coding-settings-title', style: styles.heading }, t('settings')),
         h('p', { style: styles.description }, t('settingsHint')),
@@ -564,7 +614,7 @@ window.__ModuleLoader__.load({
           !snapshot.writable ? h('p', { style: styles.hint }, t('readOnly')) : null,
           h('div', { style: styles.fieldGrid },
             textField('endpoint'), textField('baseURL'), textField('usageEndpoint'), textField('apiKeyEnv'), textField('defaultMaxTokens'),
-            checkboxField('syncOnStart'), checkboxField('showChatQuota')),
+            checkboxField('syncOnStart'), checkboxField('showChatQuota'), styleField()),
           h('div', { style: styles.actions },
             h(Button, { type: 'button', primary: true, disabled: disabled || !dirty, onClick: () => { void save() } },
               t(saveState.busy ? 'saving' : 'save')),
@@ -575,6 +625,27 @@ window.__ModuleLoader__.load({
           h('div', { 'aria-live': 'polite' },
             saveState.error ? h('p', { id: 'kimi-coding-settings-error', role: 'alert', style: styles.error }, saveState.error) : null,
             saveState.saved ? h('p', { style: styles.status }, t('saved')) : null)))
+    }
+
+    function ChatQuotaTriggerContent({ t, style, usage, label, stale = false }) {
+      const text = label ?? (usage
+        ? `${t('chatRollingShort')} ${Math.round(usage.rolling.usedPercent)}% · ${t('chatWeeklyShort')} ${Math.round(usage.weekly.usedPercent)}%`
+        : '')
+      if (style === 'bars' && usage) {
+        const bar = (field, labelKey) => {
+          const percent = Math.max(0, Math.min(100, Math.round(usage[field].usedPercent)))
+          return h('span', { style: styles.chatBarGroup },
+            h('span', null, t(labelKey)),
+            h('span', { style: styles.chatBarTrack },
+              h('span', { style: { ...styles.chatBarFill, width: `${percent}%` } })),
+            h('span', null, `${percent}%`))
+        }
+        return h('span', { style: styles.chatBars },
+          bar('rolling', 'chatRollingShort'), bar('weekly', 'chatWeeklyShort'), stale ? h('span', null, '*') : null)
+      }
+      return h(React.Fragment, null,
+        style === 'badge' ? h('span', { 'aria-hidden': true, style: { color: 'var(--dsw-alias-state-business-primary)' } }, '●') : null,
+        h('span', { style: styles.chatText }, text))
     }
 
     function ChatQuotaPill(props) {
@@ -595,6 +666,7 @@ window.__ModuleLoader__.load({
       return h(ChatQuotaSurface, {
         ...props,
         contextKey: JSON.stringify([config.value?.usageEndpoint, config.value?.apiKeyEnv]),
+        pillStyle: config.value?.chatQuotaStyle ?? 'badge',
       })
     }
 
@@ -673,15 +745,14 @@ window.__ModuleLoader__.load({
         ? `${t('chatRollingShort')} ${rolling} · ${t('chatWeeklyShort')} ${weekly}${state.error ? ' · *' : ''}`
         : state.error ? t('chatUnavailable') : t('chatLoading')
       const fullLabel = `${t('quota')}: ${label}`
+      const triggerStyle = props.pillStyle === 'plain' ? styles.chatTriggerPlain : styles.chatTrigger
       return h('div', { ref: root, style: styles.chatRoot },
         h('button', {
-          ref: trigger, type: 'button', style: styles.chatTrigger,
+          ref: trigger, type: 'button', style: triggerStyle,
           'aria-label': fullLabel, title: state.error ?? fullLabel,
           'aria-expanded': open, 'aria-haspopup': 'dialog',
           onClick: () => setOpen(previous => !previous),
-        },
-        h('span', { 'aria-hidden': true, style: { color: 'var(--dsw-alias-state-business-primary)' } }, '●'),
-        h('span', null, label)),
+        }, h(ChatQuotaTriggerContent, { t, style: props.pillStyle, usage, label, stale: Boolean(state.error) })),
         open ? h('div', {
           style: styles.chatPanel, role: 'dialog', 'aria-label': t('quota'), 'aria-busy': state.refreshing,
         },
