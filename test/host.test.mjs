@@ -2,7 +2,17 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 
 test('Host catalog and quota operations', { skip: !process.env.DSH_INSTALL_DIR && !process.resourcesPath }, async t => {
-  const { apply } = await import('../index.js')
+  const mod = await import('../index.js').catch((error) => {
+    // The desktop shell exports process.resourcesPath but plain Node cannot
+    // require through the packed asar anchor; treat that as unavailable.
+    if (/could not locate the running DSH installation/.test(String(error?.message ?? error))) return undefined
+    throw error
+  })
+  if (mod === undefined) {
+    t.skip('the running DSH installation anchor is unavailable to plain Node in this environment')
+    return
+  }
+  const { apply } = mod
   const tools = new Map()
   let operations
   let profile = { providers: { 'kimi-coding': { models: [{ id: 'local', maxTokens: 8192 }] } } }

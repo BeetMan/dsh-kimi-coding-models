@@ -23,6 +23,22 @@ error rather than invented values. Only normalized quota fields leave the Host. 
 IDs, subscription IDs, wallet details, and other account metadata are discarded. Reading quota
 is read-only and does not change the model route.
 
+## Regional endpoints
+
+The defaults target the China Kimi Code platform (`api.kimi.com`). On the overseas platform,
+point all three settings at the `api.kimi.ai` host instead:
+
+| Setting | China (default) | Overseas |
+|---|---|---|
+| Catalog endpoint | `https://api.kimi.com/coding/v1/models` | `https://api.kimi.ai/coding/v1/models` |
+| Quota endpoint | `https://api.kimi.com/coding/v1/usages` | `https://api.kimi.ai/coding/v1/usages` |
+| Route base URL | `https://api.kimi.com/coding/v1` | `https://api.kimi.ai/coding/v1` |
+
+The route base URL is written only when the route declares none. If the profile's `kimi-coding`
+route already carries a `baseURL` (as the shipped example does), change that row in the profile
+patch to the overseas host as well; subscription credentials from the two consoles are not
+interchangeable, so the credential reference must hold an overseas-platform key.
+
 ## Chat-window quota
 
 While the current conversation uses the `kimi-coding` provider, a compact quota pill appears at
