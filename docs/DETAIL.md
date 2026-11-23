@@ -15,7 +15,7 @@ Settings page's **Refresh quota** action.
 The quota panel reads `https://api.kimi.com/coding/v1/usages` with the same credential
 reference and normalizes two windows:
 
-- the **5-hour rolling window**, with its used percentage, remaining amount, and reset time;
+- the **5-hour rolling window**, with its used percentage, reset time, and a live countdown to that reset;
 - the **7-day quota**, with the same facts.
 
 The endpoint is not a stable public API contract, so malformed or changed responses produce an
@@ -27,8 +27,8 @@ is read-only and does not change the model route.
 
 While the current conversation uses the `kimi-coding` provider, a compact quota pill appears at
 the right side of the chat input. It shows the used percentage for the 5-hour and 7-day windows.
-Selecting it opens the same normalized details as the Settings page, including remaining amounts,
-reset times, and a manual refresh action.
+Selecting it opens the same normalized details as the Settings page, including reset times, a live
+countdown to each reset, and a manual refresh action.
 
 The pill reads once when it appears and then once per minute while the page is visible. Hidden
 pages skip background reads. Requests are bounded to 30 seconds and cancelled on component

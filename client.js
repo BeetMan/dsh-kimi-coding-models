@@ -65,6 +65,13 @@ window.__ModuleLoader__.load({
       used: 'used',
       remaining: 'remaining',
       resetsAt: 'Resets',
+      resetSoon: 'resetting now',
+      resetInPrefix: 'in ',
+      resetInSuffix: '',
+      durationJoin: ' ',
+      durationDay: 'd',
+      durationHour: 'h',
+      durationMinute: 'm',
       membership: 'Membership',
       usageEndpoint: 'Quota endpoint',
       usageEndpointHint: 'HTTP(S) URL returning Kimi Coding subscription usage.',
@@ -155,6 +162,13 @@ window.__ModuleLoader__.load({
       used: '已用',
       remaining: '剩余',
       resetsAt: '重置时间',
+      resetSoon: '即将重置',
+      resetInPrefix: '',
+      resetInSuffix: '后',
+      durationJoin: ' ',
+      durationDay: '天',
+      durationHour: '小时',
+      durationMinute: '分钟',
       membership: '会员等级',
       usageEndpoint: '额度接口地址',
       usageEndpointHint: '返回 Kimi Coding 订阅用量的 HTTP(S) 地址。',
@@ -725,9 +739,36 @@ window.__ModuleLoader__.load({
                 limitField(model, 'maxTokens', t('maxOutput')))))))
     }
 
+    function useNow(intervalMs = 30_000) {
+      const [now, setNow] = React.useState(() => Date.now())
+      React.useEffect(() => {
+        const timer = setInterval(() => setNow(Date.now()), intervalMs)
+        return () => clearInterval(timer)
+      }, [intervalMs])
+      return now
+    }
+
+    function resetCountdown(resetAt, now, t) {
+      const remaining = Date.parse(resetAt) - now
+      if (!Number.isFinite(remaining)) return ''
+      if (remaining <= 0) return t('resetSoon')
+      const minutes = Math.ceil(remaining / 60_000)
+      const days = Math.floor(minutes / 1440)
+      const hours = Math.floor((minutes % 1440) / 60)
+      const mins = minutes % 60
+      const parts = []
+      if (days > 0) parts.push(`${days}${t('durationDay')}`)
+      if (hours > 0) parts.push(`${hours}${t('durationHour')}`)
+      if (days === 0 && mins > 0) parts.push(`${mins}${t('durationMinute')}`)
+      if (parts.length === 0) return t('resetSoon')
+      return `${t('resetInPrefix')}${parts.join(t('durationJoin'))}${t('resetInSuffix')}`
+    }
+
     function QuotaWindow({ t, label, value, getLocale }) {
+      const now = useNow()
       const percent = Math.max(0, Math.min(100, value.usedPercent))
-      const number = value => Number.isInteger(value) ? String(value) : value.toFixed(1)
+      const resetsAt = new Date(value.resetAt).toLocaleString(getLocale?.())
+      const countdown = resetCountdown(value.resetAt, now, t)
       return h('div', { style: styles.quotaCard },
         h('div', { style: styles.quotaHead },
           h('span', null, label),
@@ -736,8 +777,7 @@ window.__ModuleLoader__.load({
           style: styles.progress, role: 'progressbar', 'aria-label': label,
           'aria-valuemin': 0, 'aria-valuemax': 100, 'aria-valuenow': Math.round(percent * 10) / 10,
         }, h('div', { style: { ...styles.progressFill, width: `${percent}%` } })),
-        h('p', { style: styles.status }, `${t('remaining')}: ${number(value.remaining)} / ${number(value.limit)}`),
-        h('p', { style: styles.hint }, `${t('resetsAt')}: ${new Date(value.resetAt).toLocaleString(getLocale?.())}`))
+        h('p', { style: styles.hint }, `${t('resetsAt')}: ${resetsAt}${countdown === '' ? '' : ` (${countdown})`}`))
     }
 
     function QuotaPanel(props) {
