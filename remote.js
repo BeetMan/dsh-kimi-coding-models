@@ -59,7 +59,7 @@ function parseModelSummary(value) {
     if (typeof value.name !== 'string') throw new Error('Invalid Kimi Coding model name')
     model.name = value.name
   }
-  for (const key of ['maxTokens', 'contextWindow']) {
+  for (const key of ['maxTokens', 'contextWindow', 'piContextWindow', 'piMaxTokens']) {
     if (value[key] === undefined) continue
     if (!Number.isInteger(value[key]) || value[key] <= 0) throw new Error(`Invalid Kimi Coding model ${key}`)
     model[key] = value[key]
@@ -76,23 +76,34 @@ export function parseModelsResult(value) {
   return { provider: value.provider, models: value.models.map(parseModelSummary) }
 }
 
-/** Validate the per-model output-cap edits carried by a save request. */
-export function parseCapsInput(value) {
-  if (value === null || typeof value !== 'object' || Array.isArray(value) || !Array.isArray(value.caps)) {
-    throw new Error('Invalid Kimi Coding output-cap request')
+/** Validate the per-model limit edits carried by a save request. */
+export function parseModelsInput(value) {
+  if (value === null || typeof value !== 'object' || Array.isArray(value) || !Array.isArray(value.models)) {
+    throw new Error('Invalid Kimi Coding model-limit request')
   }
-  const caps = value.caps.map((cap) => {
-    if (cap === null || typeof cap !== 'object' || Array.isArray(cap)
-      || typeof cap.id !== 'string' || cap.id.length === 0) {
-      throw new Error('Invalid Kimi Coding output-cap entry')
+  const models = value.models.map((entry) => {
+    if (entry === null || typeof entry !== 'object' || Array.isArray(entry)
+      || typeof entry.id !== 'string' || entry.id.length === 0) {
+      throw new Error('Invalid Kimi Coding model-limit entry')
     }
-    if (cap.maxTokens === null) return { id: cap.id, maxTokens: null }
-    if (!Number.isInteger(cap.maxTokens) || cap.maxTokens <= 0) {
-      throw new Error('Invalid Kimi Coding output-cap value')
+    const model = { id: entry.id }
+    for (const field of ['contextWindow', 'maxTokens']) {
+      if (entry[field] === undefined) continue
+      if (entry[field] === null) {
+        model[field] = null
+        continue
+      }
+      if (!Number.isInteger(entry[field]) || entry[field] <= 0) {
+        throw new Error('Invalid Kimi Coding model-limit value')
+      }
+      model[field] = entry[field]
     }
-    return { id: cap.id, maxTokens: cap.maxTokens }
+    if (!Object.hasOwn(model, 'contextWindow') && !Object.hasOwn(model, 'maxTokens')) {
+      throw new Error('Invalid Kimi Coding model-limit entry')
+    }
+    return model
   })
-  return { caps }
+  return { models }
 }
 
 /** Validate one quota window, preserving only non-secret quota facts. */
@@ -155,11 +166,11 @@ const modelsCodec = {
   create: () => ({ parse: parseModelsResult }),
 }
 
-const capsCodec = {
+const modelsInputCodec = {
   mode: 'strict',
-  typeSymbol: 'dsh-kimi-coding-models#CapsInput',
-  schema: { parse: parseCapsInput },
-  create: () => ({ parse: parseCapsInput }),
+  typeSymbol: 'dsh-kimi-coding-models#ModelsInput',
+  schema: { parse: parseModelsInput },
+  create: () => ({ parse: parseModelsInput }),
 }
 
 const applyCodec = {
@@ -238,13 +249,13 @@ export const REMOTE = {
       result: modelsCodec,
     },
     {
-      id: 'dsh-kimi-coding-models#kimiCodingModels/saveCaps',
+      id: 'dsh-kimi-coding-models#kimiCodingModels/saveModels',
       service: 'kimiCodingModels',
       namespace: 'kimiCodingModels',
-      method: 'saveCaps',
+      method: 'saveModels',
       invocation: { kind: 'direct' },
       parameters: [
-        { name: 'input', wire: 'input', source: 'json', codec: capsCodec },
+        { name: 'input', wire: 'input', source: 'json', codec: modelsInputCodec },
       ],
       cancellation: { parameter: 'signal' },
       result: modelsCodec,

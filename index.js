@@ -8,8 +8,9 @@ import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { REMOTE } from './remote.js'
+import { limitsOf } from './kimi-limits.js'
 import { AUTO_SYNC_TICK_MS, MAX_SYNC_INTERVAL_MINUTES, isAutoSyncDue } from './auto-sync.js'
-import { applyModelCaps, applySyncPlanToConfig, createSyncPlan, isSyncConfirmationCurrent } from './sync-plan.js'
+import { applyModelSettings, applySyncPlanToConfig, createSyncPlan, isSyncConfirmationCurrent } from './sync-plan.js'
 
 // Linked local bundles resolve modules from their real directory, not the
 // profile's node_modules. Resolve only official runtime packages from the DSH
@@ -295,11 +296,16 @@ async function writeRoute(ctx, plan) {
 
 /** One configured model reduced to the fields the Settings editor needs. */
 function modelSummary(model) {
+  const limits = limitsOf(model.id)
   return {
     id: model.id,
     ...typeof model.name === 'string' && model.name.length > 0 ? { name: model.name } : {},
     ...positiveInt(model.maxTokens) === undefined ? {} : { maxTokens: model.maxTokens },
     ...positiveInt(model.contextWindow) === undefined ? {} : { contextWindow: model.contextWindow },
+    ...limits === undefined ? {} : {
+      ...limits.contextWindow === undefined ? {} : { piContextWindow: limits.contextWindow },
+      ...limits.maxTokens === undefined ? {} : { piMaxTokens: limits.maxTokens },
+    },
   }
 }
 
@@ -316,11 +322,11 @@ function configuredModels(ctx) {
   }
 }
 
-/** Set or clear explicit output caps on configured route entries. */
-async function writeModelCaps(ctx, caps) {
+/** Set or clear explicit context and output limits on configured route entries. */
+async function writeModelSettings(ctx, settings) {
   const editor = ctx.get('configEditor')
   if (editor === undefined) {
-    throw new Error('this profile has no configuration editor, so model output caps cannot be saved')
+    throw new Error('this profile has no configuration editor, so model limits cannot be saved')
   }
   const entry = editor.entries().find(item => item.options.id === PI_AI_ENTRY)
   if (entry === undefined) {
@@ -328,7 +334,7 @@ async function writeModelCaps(ctx, caps) {
   }
   await editor.edit(entry, (current) => {
     const providers = { ...(current?.providers ?? {}) }
-    providers[PROVIDER] = applyModelCaps(providers[PROVIDER], caps)
+    providers[PROVIDER] = applyModelSettings(providers[PROVIDER], settings)
     return { ...current, providers }
   })
   return configuredModels(ctx)
@@ -400,9 +406,9 @@ class KimiCodingModelsService extends TypertRemoteService {
     }
   }
 
-  async saveCaps(input, signal) {
+  async saveModels(input, signal) {
     try {
-      return await this.options.saveCaps(input.caps)
+      return await this.options.saveModels(input.models)
     } catch (error) {
       throw remoteFailure(error)
     }
@@ -471,29 +477,41 @@ function formatUsageReport(value) {
   return lines.join('\n')
 }
 
-/** Normalize the tool's optional per-model cap edits. */
-function normalizedCaps(value) {
+/** Normalize the tool's optional per-model limit edits. */
+function normalizedModelSettings(value) {
   if (value === undefined) return undefined
-  if (!Array.isArray(value)) throw new Error('caps must be an array of { id, maxTokens } entries')
-  return value.map((cap) => {
-    if (cap === null || typeof cap !== 'object' || typeof cap.id !== 'string' || cap.id.length === 0) {
-      throw new Error('each cap needs the model id')
+  if (!Array.isArray(value)) throw new Error('models must be an array of { id, contextWindow?, maxTokens? } entries')
+  return value.map((setting) => {
+    if (setting === null || typeof setting !== 'object' || typeof setting.id !== 'string' || setting.id.length === 0) {
+      throw new Error('each model entry needs the model id')
     }
-    if (cap.maxTokens === null) return { id: cap.id, maxTokens: null }
-    if (!Number.isInteger(cap.maxTokens) || cap.maxTokens <= 0) {
-      throw new Error(`the output cap for ${cap.id} must be a positive whole number or null`)
+    const model = { id: setting.id }
+    for (const field of ['contextWindow', 'maxTokens']) {
+      if (setting[field] === undefined) continue
+      if (setting[field] === null) {
+        model[field] = null
+        continue
+      }
+      if (!Number.isInteger(setting[field]) || setting[field] <= 0) {
+        throw new Error(`the ${field} for ${setting.id} must be a positive whole number or null`)
+      }
+      model[field] = setting[field]
     }
-    return { id: cap.id, maxTokens: cap.maxTokens }
+    if (!Object.hasOwn(model, 'contextWindow') && !Object.hasOwn(model, 'maxTokens')) {
+      throw new Error(`the entry for ${setting.id} sets no limit`)
+    }
+    return model
   })
 }
 
-/** Model-facing report of the configured models and their explicit caps. */
+/** Model-facing report of the configured models and their explicit limits. */
 function formatModelsReport(value) {
   if (value.models.length === 0) return `The ${value.provider} route currently lists no models.`
   const lines = [`${value.provider} route: ${value.models.length} model(s).`]
   for (const model of value.models) {
-    const cap = model.maxTokens === undefined ? 'inherits the catalog output cap' : `max output ${model.maxTokens} tokens`
-    lines.push(`- ${model.name ?? model.id} (${model.id}): ${cap}`)
+    const context = model.contextWindow === undefined ? 'inherits the catalog context' : `context ${model.contextWindow}`
+    const output = model.maxTokens === undefined ? 'inherits the catalog output cap' : `max output ${model.maxTokens}`
+    lines.push(`- ${model.name ?? model.id} (${model.id}): ${context}; ${output}`)
   }
   return lines.join('\n')
 }
@@ -532,7 +550,7 @@ export function apply(ctx, config) {
     operation,
     usage,
     models: () => configuredModels(ctx),
-    saveCaps: caps => writeModelCaps(ctx, caps),
+    saveModels: settings => writeModelSettings(ctx, settings),
   })
   ctx.inject(['settings'], (scope) => {
     scope.effect(() => scope.settings.configure({ auto: false }, ctx.fiber), 'kimi-coding-models: custom settings page')
@@ -617,22 +635,24 @@ export function apply(ctx, config) {
   })
 
   ctx.tools.register({
-    name: 'kimi_coding_model_caps',
-    description: "List the models configured on this profile's kimi-coding route with their explicit output caps, "
-      + 'or set a per-model output cap. Setting writes the route configuration; a null cap restores catalog inheritance.',
+    name: 'kimi_coding_model_settings',
+    description: "List the models configured on this profile's kimi-coding route with their explicit context window "
+      + 'and output cap, or set those limits per model. Setting writes the route configuration; a null field restores '
+      + 'catalog inheritance.',
     parameters: {
       type: 'object',
       additionalProperties: false,
       properties: {
-        caps: {
+        models: {
           type: 'array',
-          description: 'Per-model output caps to write. Omit to only list the route models.',
+          description: 'Per-model limits to write. Omit to only list the route models.',
           items: {
             type: 'object',
             additionalProperties: false,
-            required: ['id', 'maxTokens'],
+            required: ['id'],
             properties: {
               id: { type: 'string' },
+              contextWindow: { anyOf: [{ type: 'integer', minimum: 1 }, { type: 'null' }] },
               maxTokens: { anyOf: [{ type: 'integer', minimum: 1 }, { type: 'null' }] },
             },
           },
@@ -655,8 +675,10 @@ export function apply(ctx, config) {
               properties: {
                 id: { type: 'string' },
                 name: { type: 'string' },
-                maxTokens: { type: 'integer' },
                 contextWindow: { type: 'integer' },
+                maxTokens: { type: 'integer' },
+                piContextWindow: { type: 'integer' },
+                piMaxTokens: { type: 'integer' },
               },
             },
           },
@@ -667,8 +689,8 @@ export function apply(ctx, config) {
     },
     timeoutMs: 30_000,
     execute: async (args) => {
-      const caps = normalizedCaps(args?.caps)
-      return caps === undefined ? configuredModels(ctx) : writeModelCaps(ctx, caps)
+      const models = normalizedModelSettings(args?.models)
+      return models === undefined ? configuredModels(ctx) : writeModelSettings(ctx, models)
     },
   })
 

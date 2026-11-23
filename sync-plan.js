@@ -44,11 +44,11 @@ export function applySyncPlanToConfig(current, plan) {
 }
 
 /**
- * Set or clear per-model output caps on one route snapshot.
- * `maxTokens: null` removes the explicit cap so the entry inherits its
- * catalog default again; every other configured field is preserved.
+ * Set or clear per-model context and output limits on one route snapshot.
+ * A null field removes that explicit value so the entry inherits its catalog
+ * default again; every other configured field is preserved.
  */
-export function applyModelCaps(route, caps) {
+export function applyModelSettings(route, settings) {
   if (route === null || typeof route !== 'object' || !Array.isArray(route.models)) {
     throw new Error('this profile has no kimi-coding model list to edit')
   }
@@ -57,11 +57,14 @@ export function applyModelCaps(route, caps) {
   for (const model of next.models) {
     if (model !== null && typeof model === 'object' && typeof model.id === 'string') byId.set(model.id, model)
   }
-  for (const cap of caps) {
-    const model = byId.get(cap.id)
-    if (model === undefined) throw new Error(`the kimi-coding route does not list ${cap.id}`)
-    if (cap.maxTokens === null) delete model.maxTokens
-    else model.maxTokens = cap.maxTokens
+  for (const setting of settings) {
+    const model = byId.get(setting.id)
+    if (model === undefined) throw new Error(`the kimi-coding route does not list ${setting.id}`)
+    for (const field of ['contextWindow', 'maxTokens']) {
+      if (setting[field] === undefined) continue
+      if (setting[field] === null) delete model[field]
+      else model[field] = setting[field]
+    }
   }
   return next
 }

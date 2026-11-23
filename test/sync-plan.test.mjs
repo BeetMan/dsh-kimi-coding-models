@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { applyModelCaps, applySyncPlanToConfig, createSyncPlan, isSyncConfirmationCurrent, syncValueFingerprint } from '../sync-plan.js'
+import { applyModelSettings, applySyncPlanToConfig, createSyncPlan, isSyncConfirmationCurrent, syncValueFingerprint } from '../sync-plan.js'
 import { parseSyncResult, REMOTE } from '../remote.js'
 
 const config = {
@@ -67,7 +67,7 @@ test('an unknown model falls back to the configured output cap', () => {
   assert.equal(plan.route.models[0].contextWindow, 1048576)
 })
 
-test('per-model caps are written only to the matching entries', () => {
+test('per-model limits are written only to the matching entries', () => {
   const route = {
     api: 'openai-completions',
     models: [
@@ -75,23 +75,23 @@ test('per-model caps are written only to the matching entries', () => {
       { id: 'k3.1-pro', name: 'Kimi K3.1 Pro', maxTokens: 32768, contextWindow: 1048576 },
     ],
   }
-  const next = applyModelCaps(route, [
-    { id: 'k3', maxTokens: 131072 },
-    { id: 'k3.1-pro', maxTokens: 131072 },
+  const next = applyModelSettings(route, [
+    { id: 'k3', contextWindow: 1048576, maxTokens: 1048576 },
+    { id: 'k3.1-pro', maxTokens: 1048576 },
   ])
   assert.deepEqual(next.models, [
-    { id: 'k3', name: 'Kimi K3', maxTokens: 131072 },
-    { id: 'k3.1-pro', name: 'Kimi K3.1 Pro', maxTokens: 131072, contextWindow: 1048576 },
+    { id: 'k3', name: 'Kimi K3', contextWindow: 1048576, maxTokens: 1048576 },
+    { id: 'k3.1-pro', name: 'Kimi K3.1 Pro', maxTokens: 1048576, contextWindow: 1048576 },
   ])
   assert.equal(route.models[0].maxTokens, undefined)
 })
 
-test('a null cap restores inheritance and unknown ids are rejected', () => {
-  const route = { models: [{ id: 'k3', name: 'K3', maxTokens: 131072, contextWindow: 1048576 }] }
-  const cleared = applyModelCaps(route, [{ id: 'k3', maxTokens: null }])
-  assert.deepEqual(cleared.models, [{ id: 'k3', name: 'K3', contextWindow: 1048576 }])
-  assert.throws(() => applyModelCaps(route, [{ id: 'missing', maxTokens: 1 }]), /does not list missing/)
-  assert.throws(() => applyModelCaps(undefined, [{ id: 'k3', maxTokens: 1 }]), /no kimi-coding model list/)
+test('a null limit restores inheritance and unknown ids are rejected', () => {
+  const route = { models: [{ id: 'k3', name: 'K3', maxTokens: 1048576, contextWindow: 1048576 }] }
+  const cleared = applyModelSettings(route, [{ id: 'k3', contextWindow: null }])
+  assert.deepEqual(cleared.models, [{ id: 'k3', name: 'K3', maxTokens: 1048576 }])
+  assert.throws(() => applyModelSettings(route, [{ id: 'missing', maxTokens: 1 }]), /does not list missing/)
+  assert.throws(() => applyModelSettings(undefined, [{ id: 'k3', maxTokens: 1 }]), /no kimi-coding model list/)
 })
 
 test('final write accepts only the route snapshot used by the plan', () => {

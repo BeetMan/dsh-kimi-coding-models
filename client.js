@@ -45,14 +45,15 @@ window.__ModuleLoader__.load({
       removed: 'No longer published',
       checkedAt: 'Checked',
       quota: 'Subscription quota',
-      modelCaps: 'Model output caps',
-      modelCapsHint: 'Set an explicit output cap for each model in this profile\'s kimi-coding route. Leave a field empty to inherit the catalog default. Saving writes the route immediately; model synchronization keeps these caps.',
+      modelCaps: 'Model limits',
+      modelCapsHint: 'Set the context window (maximum input) and output cap for each model in this profile\'s kimi-coding route. Leave a field empty to inherit the installed pi-ai catalog value (the placeholder shows the pi-ai 1.6.0 limit where known). Saving writes the route immediately; model synchronization keeps these limits.',
       modelCapsEmpty: 'This profile has no kimi-coding models yet. Check for updates and sync the live catalog first.',
       modelCapsPlaceholder: 'inherit',
-      outputTokens: 'Output tokens',
-      saveCaps: 'Save output caps',
+      contextWindow: 'Context window (max input)',
+      maxOutput: 'Max output tokens',
+      saveCaps: 'Save model limits',
       savingCaps: 'Saving…',
-      capsSaved: 'Output caps saved.',
+      capsSaved: 'Model limits saved.',
       capsReload: 'Reload',
       capsInvalid: 'Enter a positive whole number, or leave the field empty.',
       quotaHint: 'Read the current 5-hour rolling window and 7-day subscription quota.',
@@ -76,7 +77,7 @@ window.__ModuleLoader__.load({
       apiKeyEnv: 'Credential reference',
       apiKeyEnvHint: 'Environment-variable name only. Never paste the API key here.',
       defaultMaxTokens: 'Default output tokens',
-      defaultMaxTokensHint: 'Used for a newly discovered model whose listing has no output cap. Kimi documents 131072 for the K3 family; lower it for models with smaller caps.',
+      defaultMaxTokensHint: 'Fallback for a newly discovered model whose family and listing disclose no output cap. Known Kimi Coding models use the pi-ai 1.6.0 limits.',
       syncOnStart: 'Sync when DSH starts',
       syncOnStartHint: 'Runs once in the background on the next plugin activation.',
       syncIntervalMinutes: 'Interval sync (minutes)',
@@ -134,14 +135,15 @@ window.__ModuleLoader__.load({
       removed: '线上已下架',
       checkedAt: '检查时间',
       quota: '订阅额度',
-      modelCaps: '每个模型的输出上限',
-      modelCapsHint: '为当前 profile 的 kimi-coding 路由中的每个模型单独设置输出上限。留空表示沿用模型目录默认值；保存后立即写入路由，后续同步会保留这些值。',
+      modelCaps: '每个模型的限制',
+      modelCapsHint: '为当前 profile 的 kimi-coding 路由中的每个模型设置上下文窗口（最大输入）和输出上限。留空表示沿用当前安装的 pi-ai 目录值（占位符显示已知的 pi-ai 1.6.0 限制）。保存后立即写入路由，后续同步会保留这些限制。',
       modelCapsEmpty: '当前 profile 还没有 kimi-coding 模型，请先“检查更新”并同步线上目录。',
-      modelCapsPlaceholder: '沿用默认',
-      outputTokens: '输出 Token',
-      saveCaps: '保存输出上限',
+      modelCapsPlaceholder: '沿用',
+      contextWindow: '上下文窗口（最大输入）',
+      maxOutput: '最大输出 Token',
+      saveCaps: '保存模型限制',
       savingCaps: '正在保存…',
-      capsSaved: '输出上限已保存。',
+      capsSaved: '模型限制已保存。',
       capsReload: '重新读取',
       capsInvalid: '请输入正整数，或留空。',
       quotaHint: '读取当前 5 小时滚动窗口和 7 天订阅额度。',
@@ -165,7 +167,7 @@ window.__ModuleLoader__.load({
       apiKeyEnv: '凭据变量名',
       apiKeyEnvHint: '只填写环境变量名称，不要在这里粘贴 API Key。',
       defaultMaxTokens: '默认输出 Token 上限',
-      defaultMaxTokensHint: '线上目录没有给出输出上限时，用于新发现的模型。Kimi 官方文档中 K3 系列默认 131072；上限更小的模型请调低。',
+      defaultMaxTokensHint: '线上目录没有给出输出上限、且不属于已知模型时，用于新发现的模型。已知 Kimi Coding 模型使用 pi-ai 1.6.0 的限制。',
       syncOnStart: 'DSH 启动时同步',
       syncOnStartHint: '下次插件激活时在后台执行一次同步。',
       syncIntervalMinutes: '定时同步间隔（分钟）',
@@ -290,7 +292,7 @@ window.__ModuleLoader__.load({
         if (typeof value.name !== 'string') throw new Error('Invalid Kimi Coding model name')
         model.name = value.name
       }
-      for (const key of ['maxTokens', 'contextWindow']) {
+      for (const key of ['maxTokens', 'contextWindow', 'piContextWindow', 'piMaxTokens']) {
         if (value[key] === undefined) continue
         if (!Number.isInteger(value[key]) || value[key] <= 0) throw new Error(`Invalid Kimi Coding model ${key}`)
         model[key] = value[key]
@@ -304,30 +306,41 @@ window.__ModuleLoader__.load({
       }
       return { provider: value.provider, models: value.models.map(parseModelSummary) }
     }
-    function parseCapsInput(value) {
-      if (value === null || typeof value !== 'object' || Array.isArray(value) || !Array.isArray(value.caps)) {
-        throw new Error('Invalid Kimi Coding output-cap request')
+    function parseModelsInput(value) {
+      if (value === null || typeof value !== 'object' || Array.isArray(value) || !Array.isArray(value.models)) {
+        throw new Error('Invalid Kimi Coding model-limit request')
       }
-      const caps = value.caps.map((cap) => {
-        if (cap === null || typeof cap !== 'object' || Array.isArray(cap)
-          || typeof cap.id !== 'string' || cap.id.length === 0) {
-          throw new Error('Invalid Kimi Coding output-cap entry')
+      const models = value.models.map((entry) => {
+        if (entry === null || typeof entry !== 'object' || Array.isArray(entry)
+          || typeof entry.id !== 'string' || entry.id.length === 0) {
+          throw new Error('Invalid Kimi Coding model-limit entry')
         }
-        if (cap.maxTokens === null) return { id: cap.id, maxTokens: null }
-        if (!Number.isInteger(cap.maxTokens) || cap.maxTokens <= 0) {
-          throw new Error('Invalid Kimi Coding output-cap value')
+        const model = { id: entry.id }
+        for (const field of ['contextWindow', 'maxTokens']) {
+          if (entry[field] === undefined) continue
+          if (entry[field] === null) {
+            model[field] = null
+            continue
+          }
+          if (!Number.isInteger(entry[field]) || entry[field] <= 0) {
+            throw new Error('Invalid Kimi Coding model-limit value')
+          }
+          model[field] = entry[field]
         }
-        return { id: cap.id, maxTokens: cap.maxTokens }
+        if (!Object.hasOwn(model, 'contextWindow') && !Object.hasOwn(model, 'maxTokens')) {
+          throw new Error('Invalid Kimi Coding model-limit entry')
+        }
+        return model
       })
-      return { caps }
+      return { models }
     }
     const modelsCodec = {
       mode: 'strict', typeSymbol: 'dsh-kimi-coding-models#ModelsResult',
       schema: { parse: parseModelsResult }, create: () => ({ parse: parseModelsResult }),
     }
-    const capsCodec = {
-      mode: 'strict', typeSymbol: 'dsh-kimi-coding-models#CapsInput',
-      schema: { parse: parseCapsInput }, create: () => ({ parse: parseCapsInput }),
+    const modelsInputCodec = {
+      mode: 'strict', typeSymbol: 'dsh-kimi-coding-models#ModelsInput',
+      schema: { parse: parseModelsInput }, create: () => ({ parse: parseModelsInput }),
     }
     const resultCodec = {
       mode: 'strict',
@@ -386,11 +399,11 @@ window.__ModuleLoader__.load({
           cancellation: { parameter: 'signal' }, result: modelsCodec,
         },
         {
-          id: 'dsh-kimi-coding-models#kimiCodingModels/saveCaps',
-          service: 'kimiCodingModels', namespace: 'kimiCodingModels', method: 'saveCaps',
+          id: 'dsh-kimi-coding-models#kimiCodingModels/saveModels',
+          service: 'kimiCodingModels', namespace: 'kimiCodingModels', method: 'saveModels',
           invocation: { kind: 'direct' },
           parameters: [
-            { name: 'input', wire: 'input', source: 'json', codec: capsCodec },
+            { name: 'input', wire: 'input', source: 'json', codec: modelsInputCodec },
           ],
           cancellation: { parameter: 'signal' }, result: modelsCodec,
         },
@@ -429,6 +442,8 @@ window.__ModuleLoader__.load({
       },
       modelName: { fontSize: 13, fontWeight: 500, overflowWrap: 'anywhere' },
       modelId: { color: 'var(--dsw-alias-label-tertiary)', fontSize: 11, fontFamily: 'monospace', overflowWrap: 'anywhere' },
+      limitFields: { display: 'flex', flexWrap: 'wrap', gap: 12, flex: 'none' },
+      limitField: { display: 'grid', gap: 4 },
       badge: {
         flex: 'none', padding: '2px 7px', borderRadius: 6, fontSize: 11,
         color: 'var(--dsw-alias-label-secondary)', background: 'var(--dsw-alias-interactive-bg-hover)',
@@ -597,7 +612,7 @@ window.__ModuleLoader__.load({
             })))) : null)
     }
 
-    function ModelCapsPanel(props) {
+    function ModelSettingsPanel(props) {
       const { t } = props
       const [state, setState] = React.useState({
         status: 'loading', models: [], draft: {}, error: null, saving: false, saved: false,
@@ -622,42 +637,54 @@ window.__ModuleLoader__.load({
         void load()
         return () => { mounted.current = false }
       }, [])
-      const edit = (id, value) => {
+      const edit = (id, field, value) => {
         setState(previous => ({
           ...previous,
-          draft: { ...previous.draft, [id]: value },
+          draft: { ...previous.draft, [id]: { ...previous.draft[id], [field]: value } },
           saved: false,
           error: null,
         }))
       }
-      const valueOf = (model) => Object.hasOwn(state.draft, model.id)
-        ? state.draft[model.id]
-        : model.maxTokens === undefined ? '' : String(model.maxTokens)
-      const dirty = state.models.some(model => valueOf(model) !== (model.maxTokens === undefined ? '' : String(model.maxTokens)))
+      const original = (model, field) => model[field] === undefined ? '' : String(model[field])
+      const valueOf = (model, field) => {
+        const draft = state.draft[model.id]
+        return draft !== undefined && Object.hasOwn(draft, field) ? draft[field] : original(model, field)
+      }
+      const placeholderOf = (model, field) => {
+        const suggested = field === 'contextWindow' ? model.piContextWindow : model.piMaxTokens
+        return suggested === undefined ? t('modelCapsPlaceholder') : suggested.toLocaleString()
+      }
+      const dirty = state.models.some(model => ['contextWindow', 'maxTokens']
+        .some(field => valueOf(model, field) !== original(model, field)))
       const save = async () => {
-        const caps = []
+        const models = []
         for (const model of state.models) {
-          const raw = String(valueOf(model)).trim()
-          const original = model.maxTokens === undefined ? '' : String(model.maxTokens)
-          if (raw === original) continue
-          if (raw === '') {
-            caps.push({ id: model.id, maxTokens: null })
-            continue
+          const entry = { id: model.id }
+          let changed = false
+          for (const field of ['contextWindow', 'maxTokens']) {
+            const raw = String(valueOf(model, field)).trim()
+            if (raw === original(model, field)) continue
+            changed = true
+            if (raw === '') {
+              entry[field] = null
+              continue
+            }
+            const value = Number(raw)
+            if (!Number.isInteger(value) || value <= 0) {
+              setState(previous => ({ ...previous, error: t('capsInvalid'), saved: false }))
+              return
+            }
+            entry[field] = value
           }
-          const maxTokens = Number(raw)
-          if (!Number.isInteger(maxTokens) || maxTokens <= 0) {
-            setState(previous => ({ ...previous, error: t('capsInvalid'), saved: false }))
-            return
-          }
-          caps.push({ id: model.id, maxTokens })
+          if (changed) models.push(entry)
         }
-        if (caps.length === 0) {
+        if (models.length === 0) {
           setState(previous => ({ ...previous, draft: {}, saved: true, error: null }))
           return
         }
         setState(previous => ({ ...previous, saving: true, error: null, saved: false }))
         try {
-          const result = await props.saveCaps({ caps })
+          const result = await props.saveModels({ models })
           if (!mounted.current) return
           setState({ status: 'ready', models: result.models, draft: {}, error: null, saving: false, saved: true })
         } catch (error) {
@@ -669,6 +696,14 @@ window.__ModuleLoader__.load({
         }
       }
       const disabled = state.status !== 'ready' || state.saving
+      const limitField = (model, field, label) => h('label', { style: styles.limitField },
+        h('span', { style: styles.hint }, label),
+        h('input', {
+          type: 'number', min: 1, step: 1, style: { ...styles.input, width: 150, flex: 'none' },
+          value: valueOf(model, field), placeholder: placeholderOf(model, field), disabled: state.saving,
+          'aria-label': `${model.name ?? model.id} ${label}`,
+          onChange: event => edit(model.id, field, event.target.value),
+        }))
       return h('section', { style: styles.card, 'aria-labelledby': 'kimi-coding-caps-title' },
         h('h2', { id: 'kimi-coding-caps-title', style: styles.heading }, t('modelCaps')),
         h('p', { style: styles.description }, t('modelCapsHint')),
@@ -682,15 +717,12 @@ window.__ModuleLoader__.load({
           : state.models.length === 0
             ? state.error ? null : h('p', { style: styles.status }, t('modelCapsEmpty'))
             : h('div', { style: styles.modelList }, state.models.map(model => h('div', { key: model.id, style: styles.modelRow },
-            h('div', { style: { minWidth: 0 } },
-              h('div', { style: styles.modelName }, model.name ?? model.id),
-              h('div', { style: styles.modelId }, `${model.id}${model.contextWindow === undefined ? '' : ` · ${model.contextWindow.toLocaleString()} ctx`}`)),
-            h('input', {
-              type: 'number', min: 1, step: 1, style: { ...styles.input, width: 130, flex: 'none' },
-              value: valueOf(model), placeholder: t('modelCapsPlaceholder'), disabled: state.saving,
-              'aria-label': `${model.name ?? model.id} ${t('outputTokens')}`,
-              onChange: event => edit(model.id, event.target.value),
-            })))))
+              h('div', { style: { minWidth: 0, flex: '1 1 180px' } },
+                h('div', { style: styles.modelName }, model.name ?? model.id),
+                h('div', { style: styles.modelId }, model.id)),
+              h('div', { style: styles.limitFields },
+                limitField(model, 'contextWindow', t('contextWindow')),
+                limitField(model, 'maxTokens', t('maxOutput')))))))
     }
 
     function QuotaWindow({ t, label, value, getLocale }) {
@@ -1040,7 +1072,7 @@ window.__ModuleLoader__.load({
     function KimiCodingSettings(props) {
       return h('div', { style: styles.page },
         h(SyncPanel, props),
-        h(ModelCapsPanel, props),
+        h(ModelSettingsPanel, props),
         h(QuotaPanel, props),
         h(SettingsPanel, props))
     }
@@ -1065,7 +1097,7 @@ window.__ModuleLoader__.load({
           const sync = (confirmation, signal) => call('sync', true, confirmation, signal)
           const usage = (signal) => call('usage', signal)
           const models = () => call('models')
-          const saveCaps = (input) => call('saveCaps', input)
+          const saveModels = (input) => call('saveModels', input)
           const injected = () => ({
             form,
             t: remoteCtx.locale.bind(NS),
@@ -1074,7 +1106,7 @@ window.__ModuleLoader__.load({
             sync,
             usage,
             models,
-            saveCaps,
+            saveModels,
           })
           remoteCtx.effect(() => remoteCtx.configForms.whileServed([ENTRY], () => remoteCtx.slots.inject('settings.section', () => remoteCtx.slots.register({
             name: 'settings.section', id: ENTRY, order: 65, locale: NS,

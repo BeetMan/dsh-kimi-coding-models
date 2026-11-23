@@ -54,15 +54,18 @@ Open **Settings → Kimi Coding**.
   catalog endpoint and check time. Catalog requests are bounded to 30 seconds and are cancelled
   when the panel unmounts or its synchronization settings change.
 
-### Per-model output caps
+### Per-model limits
 
-**Model output caps** lists the models in the profile's `kimi-coding` route — no network request
-is needed. Each row edits that entry's explicit `maxTokens` and writes the route through the
-configuration editor as soon as **Save output caps** is selected. An empty field removes the
-explicit cap, so the entry inherits the catalog default again; **Reload** rereads the route after
-a synchronization or an external edit. Synchronization keeps every existing entry's configured
-capacities, so a cap set here survives later syncs. Newly discovered models still start at the
-global **Default output tokens** value.
+**Model limits** lists the models in the profile's `kimi-coding` route — no network request is
+needed. Each row edits that entry's explicit **context window (maximum input)** and **maximum
+output tokens**, and writes the route through the configuration editor as soon as **Save model
+limits** is selected. An empty field removes that explicit value, so the entry inherits the
+installed catalog's value again — which can predate the bundled `pi-ai` 1.6.0 snapshot the
+placeholder shows. **Reload** rereads
+the route after a synchronization or an external edit. Synchronization keeps every existing
+entry's configured capacities, so limits set here survive later syncs. Newly discovered models
+still start from the listing, the `pi-ai` 1.6.0 snapshot, or the global **Default output tokens**
+fallback.
 
 The settings area edits the plugin's persisted profile configuration:
 
@@ -122,16 +125,16 @@ Read subscription quota:
 kimi_coding_usage({})
 ```
 
-List the configured models and their explicit output caps:
+List the configured models and their explicit limits:
 
 ```text
-kimi_coding_model_caps({})
+kimi_coding_model_settings({})
 ```
 
-Set or clear one model's cap (a null cap restores catalog inheritance):
+Set or clear one model's limits (a null field restores catalog inheritance):
 
 ```text
-kimi_coding_model_caps({ caps: [{ id: "k3.1-pro", maxTokens: 131072 }] })
+kimi_coding_model_settings({ models: [{ id: "k3.1-pro", contextWindow: 1048576, maxTokens: 1048576 }] })
 ```
 
 Existing route entries keep their configured fields. Their display names are normalized to a
@@ -151,9 +154,9 @@ input modalities, reasoning efforts, and Kimi's OpenAI Chat Completions compatib
   `kimi-for-coding*` uses a `32768` output cap. Kimi's documented `max_completion_tokens` default
   is `131072` with a `1048576` maximum; the default token field below remains the fallback for an
   unknown family.
-- A model configured as a bare `{ id }` entry inherits the installed catalog's output cap until
-  **Model output caps** writes an explicit value. The per-model editor lists only models already
-  present in the route; synchronize the live catalog first to add a missing model.
+- A model configured as a bare `{ id }` entry inherits the installed catalog's context window
+  and output cap until **Model limits** writes explicit values. The per-model editor lists only
+  models already present in the route; synchronize the live catalog first to add a missing model.
 - Interval synchronization runs only while the DSH Host is running, with up to one minute of
   scheduling precision; a stopped Host performs no background sync.
 - A home patch or command-line overlay can override the route. In that case the configuration
