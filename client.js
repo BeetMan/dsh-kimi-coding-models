@@ -841,7 +841,7 @@ window.__ModuleLoader__.load({
                 disabled: formSnap.status !== 'ready' || !formSnap.writable,
                 style: styles.pinButton,
                 onClick: () => { void togglePin(model.id) },
-              }, pinnedIds.has(model.id) ? '\u{1F512}' : '\u{1F513}'),
+              }, h(LockIcon, { locked: pinnedIds.has(model.id) })),
               h('div', { style: styles.limitFields },
                 limitField(model, 'contextWindow', t('contextWindow')),
                 limitField(model, 'maxTokens', t('maxOutput')))))))
