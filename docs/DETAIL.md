@@ -72,11 +72,15 @@ The settings area edits the plugin's persisted profile configuration:
 | Route base URL | `https://api.kimi.com/coding/v1` | Written only when the route declares none |
 | Quota endpoint | `https://api.kimi.com/coding/v1/usages` | Subscription quota listing to read |
 | Credential reference | `KIMI_CODING_API_KEY` | Credential name, never the secret key itself |
-| Default output tokens | `131072` | Output cap when a new model's listing discloses none; Kimi's documented default for the K3 family |
+| Default output tokens | `131072` | Fallback output cap for a new model whose family is unknown and whose listing discloses none |
 | Sync when DSH starts | off | One background sync on the next plugin activation |
 | Interval sync (minutes) | `0` | One background sync at most once per interval while DSH runs; `0` disables it, otherwise 1–10080 |
 | Show quota in the chat window | on | Compact model-aware quota pill with one-minute refresh |
 | Chat quota style | `badge` | Bordered badge, plain text, or dual progress bars |
+
+For a newly configured model, its limits are taken from the live listing first, then from the
+`pi-ai` 1.6.0 Kimi Coding snapshot bundled with this plugin, and finally from the default output
+token field for an unknown family.
 
 ### Interval synchronization
 
@@ -141,11 +145,12 @@ input modalities, reasoning efforts, and Kimi's OpenAI Chat Completions compatib
 
 - Synchronization replaces the route's model list with the complete live list, so a model Kimi
   stops publishing is removed on the next sync.
-- The live listing discloses no output cap, so a newly discovered model starts at the configured
-  default output tokens, `131072` — the `max_completion_tokens` default Kimi documents for the K3
-  and K3.1 families (their documented maximum is `1048576`). The K2.x `kimi-for-coding` models have
-  smaller output caps; lower this setting before syncing a new model from that family if the
-  upstream rejects the cap.
+- The live listing discloses no output cap. For the models known to this plugin version, a newly
+  discovered entry therefore starts from the limits published by `@earendil-works/pi-ai` 1.6.0:
+  `k3` and `k3.1-pro*` use a `1048576` context and output ceiling, `k3-256k` uses `262144`, and
+  `kimi-for-coding*` uses a `32768` output cap. Kimi's documented `max_completion_tokens` default
+  is `131072` with a `1048576` maximum; the default token field below remains the fallback for an
+  unknown family.
 - A model configured as a bare `{ id }` entry inherits the installed catalog's output cap until
   **Model output caps** writes an explicit value. The per-model editor lists only models already
   present in the route; synchronize the live catalog first to add a missing model.

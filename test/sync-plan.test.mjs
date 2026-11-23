@@ -51,12 +51,20 @@ test('route fingerprints are stable across object key order', () => {
   assert.equal(syncValueFingerprint({ b: 1, a: { d: 2, c: 3 } }), syncValueFingerprint({ a: { c: 3, d: 2 }, b: 1 }))
 })
 
-test('new models use the configured output cap while existing capacities survive', () => {
+test('new models use the pi-ai limits snapshot while existing capacities survive', () => {
   const route = { models: [{ id: 'k3', name: 'K3', maxTokens: 131072 }] }
   const plan = createSyncPlan(live, route, ['k3'], config)
   assert.equal(plan.route.models[0].maxTokens, 131072)
-  assert.equal(plan.route.models[1].maxTokens, 131072)
+  assert.equal(plan.route.models[1].maxTokens, 1048576)
+  assert.equal(plan.route.models[1].contextWindow, 1048576)
   assert.equal(plan.route.models[1].name, 'Kimi K3.1 Pro')
+})
+
+test('an unknown model falls back to the configured output cap', () => {
+  const unknown = [{ id: 'kimi-future', name: 'Kimi Future', input: ['text'] }]
+  const plan = createSyncPlan(unknown, { models: [] }, [], config)
+  assert.equal(plan.route.models[0].maxTokens, 131072)
+  assert.equal(plan.route.models[0].contextWindow, 1048576)
 })
 
 test('per-model caps are written only to the matching entries', () => {

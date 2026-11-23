@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { limitsOf } from './kimi-limits.js'
 
 const DEFAULT_CONTEXT_WINDOW = 1_048_576
 const KIMI_COMPAT = {
@@ -84,11 +85,12 @@ export function createSyncPlan(live, currentRoute, served, config) {
       return kept
     }
     if (servedSet.has(model.id)) return { id: model.id }
+    const limits = limitsOf(model.id)
     const entry = {
       id: model.id,
       name: model.name,
-      contextWindow: model.contextWindow ?? DEFAULT_CONTEXT_WINDOW,
-      maxTokens: model.maxTokens ?? config.defaultMaxTokens,
+      contextWindow: model.contextWindow ?? limits?.contextWindow ?? DEFAULT_CONTEXT_WINDOW,
+      maxTokens: model.maxTokens ?? limits?.maxTokens ?? config.defaultMaxTokens,
       input: model.input,
       compat: { ...KIMI_COMPAT },
     }
