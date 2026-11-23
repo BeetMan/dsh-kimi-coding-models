@@ -579,12 +579,12 @@ export function apply(ctx, config) {
     if (syncing) throw new Error('a Kimi Coding catalog check or sync is already in progress')
     syncing = true
     try {
-      return await sync(ctx, current(), apply, signal, options)
+      return await sync(ctx, current(), apply, signal, { ...options, freshConfig: current })
     } finally {
       syncing = false
     }
   }
-  const operation = (apply, signal, options) => runSync(apply, signal, { ...options, freshConfig: current })
+  const operation = (apply, signal, options) => runSync(apply, signal, options)
   // Short-TTL cache so agent loops and the per-minute pill refresh share one
   // upstream read; callers pass force for an explicit refresh. Plain reads in
   // the same context also share one in-flight request. The cached value
@@ -593,10 +593,10 @@ export function apply(ctx, config) {
   // shared request; forced reads honor their own signal.
   let usageCache
   let usageInflight
-  let writeQueue = Promise.resolve()
-  const historyFile = join(homedir(), '.dsh', 'kimi-coding-quota-history.json')
-  let historyFileState
-  /** Isolate history per profile, quota endpoint, and credential reference. */
+  const historyDir = join(homedir(), '.dsh', 'kimi-coding-quota-history')
+  /** Per-context parsed files, so Host processes never share one writable state. */
+  const historyFiles = new Map()
+  /** Isolate history per profile, quota endpoint (including its query), and credential reference. */
   const contextIdOf = (cfg) => {
     let profileHome = process.env.DSH_PROFILE_DIR
     try {
@@ -604,69 +604,79 @@ export function apply(ctx, config) {
     } catch {
       // Service lookup stays best-effort; the fallback still isolates by endpoint.
     }
-    let endpoint
-    try {
-      endpoint = displayEndpoint(endpointUrl(cfg.usageEndpoint))
-    } catch {
-      endpoint = String(cfg.usageEndpoint).split('?')[0]
-    }
     return createHash('sha256')
-      .update(JSON.stringify([profileHome ?? 'default', endpoint, cfg.apiKeyEnv]))
+      .update(JSON.stringify([profileHome ?? 'default', String(cfg.usageEndpoint), cfg.apiKeyEnv]))
       .digest('hex').slice(0, 16)
   }
-  const loadHistoryFile = async () => {
-    if (historyFileState === undefined) {
+  const historyPath = contextId => join(historyDir, `${contextId}.json`)
+  const loadHistoryFile = async (contextId) => {
+    if (!historyFiles.has(contextId)) {
       try {
-        const parsed = JSON.parse(await readFile(historyFile, 'utf8'))
-        historyFileState = parsed?.version === 2 && parsed?.contexts !== null && typeof parsed?.contexts === 'object'
-          ? { version: 2, contexts: parsed.contexts }
-          : { version: 2, contexts: {} }
+        const parsed = JSON.parse(await readFile(historyPath(contextId), 'utf8'))
+        historyFiles.set(contextId, {
+          samples: parsed?.version === 2 && Array.isArray(parsed?.samples) ? parsed.samples : [],
+        })
       } catch {
-        historyFileState = { version: 2, contexts: {} }
+        historyFiles.set(contextId, { samples: [] })
       }
     }
-    return historyFileState
-  }
-  const readSamples = async (contextId) => {
-    const file = await loadHistoryFile()
-    const bucket = file.contexts[contextId]
-    return Array.isArray(bucket?.samples) ? bucket.samples : []
+    return historyFiles.get(contextId)
   }
   const appendHistory = async (contextId, sample) => {
-    writeQueue = writeQueue.then(async () => {
-      const file = await loadHistoryFile()
-      const samples = await readSamples(contextId)
-      file.contexts[contextId] = { samples: appendSample(samples, sample, sample.t) }
-      await mkdir(dirname(historyFile), { recursive: true })
-      await writeFile(historyFile, JSON.stringify(file), 'utf8')
-    }).catch(() => {
+    try {
+      const file = await loadHistoryFile(contextId)
+      file.samples = appendSample(file.samples, sample, sample.t)
+      await mkdir(historyDir, { recursive: true })
+      await writeFile(historyPath(contextId), JSON.stringify({ version: 2, samples: file.samples }), 'utf8')
+    } catch {
       // History is advisory; it must never break a quota read.
-    })
-    return writeQueue
+    }
   }
   const readQuota = async (cfg, signal) => {
     const value = await readUsage(ctx, cfg, signal)
     const contextId = contextIdOf(cfg)
     const now = Date.parse(value.checkedAt)
-    const last = (await readSamples(contextId)).at(-1)
-    if (Number.isFinite(now) && (last === undefined || now - last.t >= 45_000)) {
-      await appendHistory(contextId, {
-        t: now,
-        rollingPercent: value.rolling.usedPercent,
-        weeklyPercent: value.weekly.usedPercent,
-        rollingResetAt: value.rolling.resetAt,
-        weeklyResetAt: value.weekly.resetAt,
-      })
+    const current = {
+      t: now,
+      rollingPercent: value.rolling.usedPercent,
+      weeklyPercent: value.weekly.usedPercent,
+      rollingResetAt: value.rolling.resetAt,
+      weeklyResetAt: value.weekly.resetAt,
     }
-    const trend = trendView(await readSamples(contextId))
+    const samples = (await loadHistoryFile(contextId)).samples
+    // Keep the on-disk cadence, but never let the returned curve lag a fresh
+    // reading: overlay the current point when the disk sample is still old.
+    const overlay = Number.isFinite(now) && samples.at(-1)?.t !== now
+    if (Number.isFinite(now)) {
+      const last = samples.at(-1)
+      if (last === undefined || now - last.t >= 45_000) await appendHistory(contextId, current)
+    }
+    const view = overlay ? [...samples, current] : samples
+    const trend = trendView(view)
     return trend === undefined ? value : { ...value, trend }
+  }
+  /** Wait on a shared promise but end promptly when this caller is cancelled. */
+  const awaitFor = (promise, signal) => {
+    if (signal === undefined) return promise
+    return new Promise((resolve, reject) => {
+      const onAbort = () => reject(signal.reason instanceof Error ? signal.reason : new Error('cancelled'))
+      if (signal.aborted) {
+        onAbort()
+        return
+      }
+      signal.addEventListener('abort', onAbort, { once: true })
+      promise.then(
+        (value) => { signal.removeEventListener('abort', onAbort); resolve(value) },
+        (error) => { signal.removeEventListener('abort', onAbort); reject(error) },
+      )
+    })
   }
   const usage = async (force, signal) => {
     const cfg = current()
     const key = JSON.stringify([cfg.usageEndpoint, cfg.apiKeyEnv])
     if (!force) {
       if (usageCache?.key === key && Date.now() - usageCache.at < 60_000) return usageCache.value
-      if (usageInflight?.key === key) return usageInflight.promise
+      if (usageInflight?.key === key) return awaitFor(usageInflight.promise, signal)
     }
     const promise = readQuota(cfg, force ? signal : undefined)
       .then((value) => {
@@ -677,7 +687,7 @@ export function apply(ctx, config) {
         if (usageInflight?.promise === promise) usageInflight = undefined
       })
     if (!force) usageInflight = { key, promise }
-    return promise
+    return awaitFor(promise, signal)
   }
 
   ctx.inject(['typert'], (scope) => {

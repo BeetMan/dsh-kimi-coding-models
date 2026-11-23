@@ -31,17 +31,18 @@ test('a steady climb projects the hours left until exhaustion', () => {
   assert.ok(Math.abs(hours - 20 / 60) < 0.01)
 })
 
-test('a window that resets before the projected exhaustion reports none', () => {
-  const resetAt = '2026-11-24T10:00:00.000Z'
-  const resetMs = Date.parse(resetAt)
-  const now = resetMs - 30 * 60 * 1000 // half an hour before reset
-  const samples = Array.from({ length: 11 }, (_, index) => sample(now - (10 - index) * 60_000, 70 + index, 10, resetAt))
-  // Pace says exhaustion in ~20 minutes... but the climb is 1/min from 80%: (100-80)/60 = 1/3h = 20min < 30min — should show.
-  assert.equal(typeof projectHoursToExhaustion(samples, 'rollingPercent', now), 'number')
-  // A faster climb still hits reset first: 4%/min from 90% -> 2.5min? no: (100-90)/240 = 0.04h. Make reset 2 minutes away instead.
-  const later = resetMs - 2 * 60 * 1000
-  const lateSamples = Array.from({ length: 11 }, (_, index) => sample(later - (10 - index) * 60_000, 86 + index * 4, 10, resetAt))
-  assert.equal(projectHoursToExhaustion(lateSamples, 'rollingPercent', later), undefined)
+test('a projection never outlives the window reset time', () => {
+  // 1%/min climb ending at the current 80%: exhaustion in 20 minutes.
+  const build = (now, resetAt) => Array.from({ length: 11 },
+    (_, index) => sample(now - (10 - index) * 60_000, 70 + index, 10, resetAt))
+  const base = Date.parse('2026-11-24T10:00:00.000Z')
+
+  const beforeReset = build(base - 30 * 60 * 1000, '2026-11-24T10:30:00.000Z')
+  const hours = projectHoursToExhaustion(beforeReset, 'rollingPercent', base - 30 * 60 * 1000)
+  assert.ok(Math.abs(hours - 20 / 60) < 0.01)
+
+  const resetFirst = build(base - 2 * 60 * 1000, '2026-11-24T10:02:00.000Z')
+  assert.equal(projectHoursToExhaustion(resetFirst, 'rollingPercent', base - 2 * 60 * 1000), undefined)
 })
 
 test('projections ignore samples from a previous cycle', () => {

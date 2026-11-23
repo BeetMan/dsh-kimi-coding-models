@@ -19,10 +19,13 @@ reference and normalizes two windows:
   sampled mini trend, and a pace-based estimate of when the window fills;
 - the **7-day quota**, with the same facts.
 
-Every successful read appends a sample to a local history file (`~/.dsh/kimi-coding-quota-history.json`,
-seven-day retention, one per minute at most). Samples are isolated per profile, quota endpoint, and
-credential reference — the context is a hash of those three identifiers, so no API key or URL credential
-is persisted; a context with no history starts empty. The trend view shows the newest samples as a
+Every successful read appends a sample to a local history file
+(`~/.dsh/kimi-coding-quota-history/<context>.json`, seven-day retention, one per minute at most).
+Each context gets its own file, isolated per profile, the full quota endpoint (including its query),
+and credential reference — the context id is a hash of those identifiers, so no API key or URL
+credential is persisted in plaintext; a context with no history starts empty, and separate Host
+processes never share one writable file. The returned curve overlays the freshest reading even
+between disk samples, so a forced refresh never shows a stale endpoint. The trend view shows the newest samples as a
 sparkline and projects the hours left until each window reaches 100% from the pace of the last two hours
 of the current quota cycle. A projection never exceeds the window's own reset time: when the pace would
 outrun the reset, no countdown is shown for that window. The projection needs at least six recent samples
