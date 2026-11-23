@@ -92,6 +92,8 @@ const fields = {
   chatQuotaStyle: z.union([z.const('badge'), z.const('plain'), z.const('bars'), z.const('ring'), z.const('bar'), z.const('dot')]).default('badge'),
   /** Draw the bordered pill around the chat quota indicator. */
   chatQuotaBorder: z.boolean().default(true),
+  /** Kimi Code platform whose endpoint presets the Settings page offers. */
+  platform: z.union([z.const('china'), z.const('global')]).default('china'),
 }
 
 /** Plain schema used for diagnostics and non-Loader callers. */

@@ -25,8 +25,10 @@ is read-only and does not change the model route.
 
 ## Regional endpoints
 
-The defaults target the China Kimi Code platform (`api.kimi.com`). On the overseas platform,
-point all three settings at the `api.kimi.ai` host instead:
+The defaults target the China Kimi Code platform (`api.kimi.com`). The **Platform** preset in
+Settings fills all three fields for the chosen platform at once; endpoints remain individually
+editable for custom proxies. On the overseas platform, point all three settings at the
+`api.kimi.ai` host instead:
 
 | Setting | China (default) | Overseas |
 |---|---|---|
@@ -91,6 +93,7 @@ The settings area edits the plugin's persisted profile configuration:
 
 | Field | Default | Meaning |
 |---|---|---|
+| Platform | `china` | Preset whose endpoints fill the three fields below when selected: China (`api.kimi.com`) or overseas (`api.kimi.ai`) |
 | Catalog endpoint | `https://api.kimi.com/coding/v1/models` | Live listing to read |
 | Route base URL | `https://api.kimi.com/coding/v1` | Written only when the route declares none |
 | Quota endpoint | `https://api.kimi.com/coding/v1/usages` | Subscription quota listing to read |

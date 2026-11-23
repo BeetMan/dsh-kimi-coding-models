@@ -14,13 +14,25 @@ window.__ModuleLoader__.load({
       defaultMaxTokens: 131072,
       syncOnStart: false,
       syncIntervalMinutes: 0,
-      showChatQuota: true,
+      platform: 'china',      showChatQuota: true,
       chatQuotaStyle: 'badge',
       chatQuotaBorder: true,
     }
     const PREVIEW_QUOTA = {
       rolling: { usedPercent: 18 },
       weekly: { usedPercent: 32 },
+    }
+    const PLATFORMS = {
+      china: {
+        endpoint: 'https://api.kimi.com/coding/v1/models',
+        usageEndpoint: 'https://api.kimi.com/coding/v1/usages',
+        baseURL: 'https://api.kimi.com/coding/v1',
+      },
+      global: {
+        endpoint: 'https://api.kimi.ai/coding/v1/models',
+        usageEndpoint: 'https://api.kimi.ai/coding/v1/usages',
+        baseURL: 'https://api.kimi.ai/coding/v1',
+      },
     }
 
     const en = {
@@ -78,6 +90,10 @@ window.__ModuleLoader__.load({
       usageEndpointHint: 'Endpoint returning Kimi Coding subscription usage.',
       settings: 'Synchronization settings',
       settingsHint: 'Changes are saved to this DSH profile.',
+      platform: 'Platform',
+      platformHint: 'Fills the three endpoint fields below with the preset for the chosen Kimi Code platform. If the profile route declares its own base URL, update that row to the same host; the two platforms issue different API keys.',
+      platform_china: 'China (api.kimi.com)',
+      platform_global: 'Overseas (api.kimi.ai)',
       endpoint: 'Catalog endpoint',
       endpointHint: 'Endpoint returning the OpenAI-compatible model list.',
       baseURL: 'Route base URL',
@@ -180,6 +196,10 @@ window.__ModuleLoader__.load({
       usageEndpointHint: '返回 Kimi Coding 订阅用量的端点地址。',
       settings: '同步设置',
       settingsHint: '修改会保存到当前 DSH profile。',
+      platform: '平台',
+      platformHint: '用所选 Kimi Code 平台的预设值回填下方三个端点字段。若 profile 路由自带 Base URL，请同步改为同一域名；两个平台签发的 API 密钥不互通。',
+      platform_china: '中国版 (api.kimi.com)',
+      platform_global: '国际版 (api.kimi.ai)',
       endpoint: '模型目录地址',
       endpointHint: '返回 OpenAI 兼容模型列表的端点地址。',
       baseURL: '路由 Base URL',
@@ -945,6 +965,28 @@ window.__ModuleLoader__.load({
         h('div', null,
           h('label', { htmlFor: `kimi-coding-${field}`, style: styles.label }, t(field)),
           h('p', { id: `kimi-coding-${field}-hint`, style: styles.hint }, t(`${field}Hint`))))
+      const platformOf = (current) => {
+        if (current.endpoint === PLATFORMS.china.endpoint) return 'china'
+        if (current.endpoint === PLATFORMS.global.endpoint) return 'global'
+        return current.platform ?? 'china'
+      }
+      const platformField = () => h('div', { style: styles.field },
+        h('label', { style: styles.label, htmlFor: 'kimi-coding-platform' },
+          t('platform'),
+          snapshot.user && Object.hasOwn(snapshot.user, 'platform') ? h('span', { style: styles.badge }, t('overridden')) : null),
+        h('select', {
+          id: 'kimi-coding-platform', style: styles.input, value: platformOf(values), disabled,
+          'aria-describedby': 'kimi-coding-platform-hint',
+          onChange: event => {
+            const preset = PLATFORMS[event.target.value]
+            if (preset === undefined) return
+            edit('platform', event.target.value)
+            edit('endpoint', preset.endpoint)
+            edit('usageEndpoint', preset.usageEndpoint)
+            edit('baseURL', preset.baseURL)
+          },
+        }, ['china', 'global'].map(key => h('option', { key, value: key }, t(`platform_${key}`)))),
+        h('p', { id: 'kimi-coding-platform-hint', style: styles.hint }, t('platformHint')))
       const styleField = () => h('div', { style: styles.field },
         h('label', { style: styles.label, htmlFor: 'kimi-coding-chatQuotaStyle' }, t('chatQuotaStyle')),
         h('select', {
@@ -965,7 +1007,7 @@ window.__ModuleLoader__.load({
         snapshot.status !== 'ready' ? h('p', { style: styles.status }, t(snapshot.status === 'loading' ? 'loading' : 'unavailable')) : h(React.Fragment, null,
           !snapshot.writable ? h('p', { style: styles.hint }, t('readOnly')) : null,
           h('div', { style: styles.fieldGrid },
-            textField('endpoint'), textField('baseURL'), textField('usageEndpoint'), textField('apiKeyEnv'), textField('defaultMaxTokens'),
+            platformField(), textField('endpoint'), textField('baseURL'), textField('usageEndpoint'), textField('apiKeyEnv'), textField('defaultMaxTokens'),
             checkboxField('syncOnStart'), textField('syncIntervalMinutes'), checkboxField('showChatQuota'), styleField(), checkboxField('chatQuotaBorder')),
           h('div', { style: styles.actions },
             h(Button, { type: 'button', primary: true, disabled: disabled || !dirty, onClick: () => { void save() } },
