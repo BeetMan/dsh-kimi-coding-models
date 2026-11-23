@@ -90,6 +90,8 @@ const fields = {
   showChatQuota: z.boolean().default(true),
   /** Visual treatment of the chat quota pill. */
   chatQuotaStyle: z.union([z.const('badge'), z.const('plain'), z.const('bars')]).default('badge'),
+  /** Draw the bordered pill around the chat quota indicator. */
+  chatQuotaBorder: z.boolean().default(true),
 }
 
 /** Plain schema used for diagnostics and non-Loader callers. */

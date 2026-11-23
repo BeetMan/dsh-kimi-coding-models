@@ -35,7 +35,8 @@ pages skip background reads. Requests are bounded to 30 seconds and cancelled on
 cleanup, so a stalled request cannot lock later refreshes. A failed refresh retains the previous
 result with an explicit stale notice. Switching away from `kimi-coding` hides the pill. **Show quota in the chat window** in
 Settings controls this integration. **Chat quota style** offers a bordered badge, plain text, or
-compact dual progress bars, with a live preview before saving.
+compact dual progress bars, and **Chat quota border** switches the bordered pill on or off
+(plain text always stays borderless), with a live preview before saving.
 
 ## Settings page
 
@@ -79,7 +80,8 @@ The settings area edits the plugin's persisted profile configuration:
 | Sync when DSH starts | off | One background sync on the next plugin activation |
 | Interval sync (minutes) | `0` | One background sync at most once per interval while DSH runs; `0` disables it, otherwise 1–10080 |
 | Show quota in the chat window | on | Compact model-aware quota pill with one-minute refresh |
-| Chat quota style | `badge` | Bordered badge, plain text, or dual progress bars |
+| Chat quota style | `badge` | Badge, plain text, or dual progress bars |
+| Chat quota border | on | Draws the bordered pill around the indicator; plain text stays borderless |
 
 For a newly configured model, its limits are taken from the live listing first, then from the
 `pi-ai` 1.6.0 Kimi Coding snapshot bundled with this plugin, and finally from the default output

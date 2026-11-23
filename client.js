@@ -16,6 +16,7 @@ window.__ModuleLoader__.load({
       syncIntervalMinutes: 0,
       showChatQuota: true,
       chatQuotaStyle: 'badge',
+      chatQuotaBorder: true,
     }
     const PREVIEW_QUOTA = {
       rolling: { usedPercent: 18 },
@@ -91,6 +92,8 @@ window.__ModuleLoader__.load({
       syncIntervalMinutesHint: 'Runs one background sync per interval while DSH is running. 0 disables it; 1–10080 minutes, up to one week.',
       showChatQuota: 'Show quota in the chat window',
       showChatQuotaHint: 'Shows a compact quota pill while the conversation uses Kimi Coding. Refreshes every minute when visible.',
+      chatQuotaBorder: 'Chat quota border',
+      chatQuotaBorderHint: 'Draws the bordered pill around the chat quota indicator. Plain text always stays borderless.',
       chatRollingShort: '5h',
       chatWeeklyShort: '7d',
       chatLoading: '…',
@@ -188,6 +191,8 @@ window.__ModuleLoader__.load({
       syncIntervalMinutesHint: 'DSH 运行期间按此间隔在后台同步；0 表示关闭，可填 1–10080（最长一周）。',
       showChatQuota: '在聊天窗显示额度',
       showChatQuotaHint: '当前聊天使用 Kimi Coding 时显示紧凑额度胶囊，可见状态下每分钟刷新。',
+      chatQuotaBorder: '聊天额度边框',
+      chatQuotaBorderHint: '为聊天额度指示器绘制带边框的胶囊外观；纯文本样式始终无边框。',
       chatRollingShort: '5 小时',
       chatWeeklyShort: '7 天',
       chatLoading: '…',
@@ -945,7 +950,7 @@ window.__ModuleLoader__.load({
           h('span', { style: styles.hint }, t('stylePreview')),
           h('span', {
             'aria-hidden': true,
-            style: { ...(values.chatQuotaStyle === 'plain' ? styles.chatTriggerPlain : styles.chatTrigger), cursor: 'default' },
+            style: { ...(values.chatQuotaStyle === 'plain' || values.chatQuotaBorder === false ? styles.chatTriggerPlain : styles.chatTrigger), cursor: 'default' },
           }, h(ChatQuotaTriggerContent, { t, style: values.chatQuotaStyle, usage: PREVIEW_QUOTA }))))
       return h('section', { style: styles.card, 'aria-labelledby': 'kimi-coding-settings-title' },
         h('h2', { id: 'kimi-coding-settings-title', style: styles.heading }, t('settings')),
@@ -954,7 +959,7 @@ window.__ModuleLoader__.load({
           !snapshot.writable ? h('p', { style: styles.hint }, t('readOnly')) : null,
           h('div', { style: styles.fieldGrid },
             textField('endpoint'), textField('baseURL'), textField('usageEndpoint'), textField('apiKeyEnv'), textField('defaultMaxTokens'),
-            checkboxField('syncOnStart'), textField('syncIntervalMinutes'), checkboxField('showChatQuota'), styleField()),
+            checkboxField('syncOnStart'), textField('syncIntervalMinutes'), checkboxField('showChatQuota'), styleField(), checkboxField('chatQuotaBorder')),
           h('div', { style: styles.actions },
             h(Button, { type: 'button', primary: true, disabled: disabled || !dirty, onClick: () => { void save() } },
               t(saveState.busy ? 'saving' : 'save')),
@@ -1007,6 +1012,7 @@ window.__ModuleLoader__.load({
         ...props,
         contextKey: JSON.stringify([config.value?.usageEndpoint, config.value?.apiKeyEnv]),
         pillStyle: config.value?.chatQuotaStyle ?? 'badge',
+        pillBorder: config.value?.chatQuotaBorder !== false,
       })
     }
 
@@ -1085,7 +1091,7 @@ window.__ModuleLoader__.load({
         ? `${t('chatRollingShort')} ${rolling} · ${t('chatWeeklyShort')} ${weekly}${state.error ? ' · *' : ''}`
         : state.error ? t('chatUnavailable') : t('chatLoading')
       const fullLabel = `${t('quota')}: ${label}`
-      const triggerStyle = props.pillStyle === 'plain' ? styles.chatTriggerPlain : styles.chatTrigger
+      const triggerStyle = props.pillStyle === 'plain' || props.pillBorder === false ? styles.chatTriggerPlain : styles.chatTrigger
       return h('div', { ref: root, style: styles.chatRoot },
         h('button', {
           ref: trigger, type: 'button', style: triggerStyle,
