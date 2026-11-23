@@ -10,13 +10,17 @@ export const TREND_SAMPLE_LIMIT = 10_080
 
 /**
  * Append one sample and prune anything older than the retention window.
- * `sample` is `{ t, rollingPercent, weeklyPercent }`; samples are kept in
- * arrival order and the newest wins on equal timestamps.
+ * A sample carries both windows' percent and reset time so a projection can
+ * tell cycles apart. Samples are kept in arrival order.
  */
 export function appendSample(history, sample, now = Date.now()) {
-  if (!Number.isFinite(sample?.t) || !Number.isFinite(sample?.rollingPercent)
-    || !Number.isFinite(sample?.weeklyPercent)) {
-    throw new Error('a quota sample needs t, rollingPercent, and weeklyPercent')
+  for (const key of ['t', 'rollingPercent', 'weeklyPercent']) {
+    if (!Number.isFinite(sample?.[key])) throw new Error(`a quota sample needs a finite ${key}`)
+  }
+  for (const key of ['rollingResetAt', 'weeklyResetAt']) {
+    if (typeof sample?.[key] !== 'string' || !Number.isFinite(Date.parse(sample[key]))) {
+      throw new Error(`a quota sample needs a parseable ${key}`)
+    }
   }
   const cutoff = now - TREND_RETENTION_MS
   const kept = history.filter(item => item.t >= cutoff)
@@ -24,20 +28,30 @@ export function appendSample(history, sample, now = Date.now()) {
   return kept.length > TREND_SAMPLE_LIMIT ? kept.slice(kept.length - TREND_SAMPLE_LIMIT) : kept
 }
 
+const RESET_KEY = { rollingPercent: 'rollingResetAt', weeklyPercent: 'weeklyResetAt' }
+
 /**
  * Hours until a window reaches 100% at the pace of the last `windowMs` of
- * samples, by least-squares on percent-versus-time. Returns undefined when
- * the slope is not clearly positive or there is too little data.
+ * samples in the same quota cycle as the newest sample, by least-squares on
+ * percent-versus-time. Returns undefined when the slope is not clearly
+ * positive, there is too little data, or the window resets before the
+ * projected exhaustion — that cycle simply will not run out.
  */
 export function projectHoursToExhaustion(samples, field, now = Date.now(), windowMs = 2 * 60 * 60 * 1000) {
   const cutoff = now - windowMs
   const recent = samples.filter(item => item.t >= cutoff)
   if (recent.length < 6) return undefined
-  const slope = leastSquaresSlope(recent.map(item => [item.t / 3_600_000, item[field]]))
+  const resetKey = RESET_KEY[field]
+  const cycle = recent[recent.length - 1][resetKey]
+  const cycleSamples = recent.filter(item => item[resetKey] === cycle)
+  if (cycleSamples.length < 3) return undefined
+  const slope = leastSquaresSlope(cycleSamples.map(item => [item.t / 3_600_000, item[field]]))
   if (slope === undefined || slope <= 0.25) return undefined
-  const current = recent[recent.length - 1][field]
+  const current = cycleSamples[cycleSamples.length - 1][field]
   const hours = (100 - current) / slope
   if (!Number.isFinite(hours) || hours <= 0) return undefined
+  const hoursUntilReset = (Date.parse(cycle) - now) / 3_600_000
+  if (!Number.isFinite(hoursUntilReset) || hours >= hoursUntilReset) return undefined
   return Math.min(hours, 24 * 30)
 }
 

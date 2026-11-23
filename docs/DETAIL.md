@@ -20,11 +20,16 @@ reference and normalizes two windows:
 - the **7-day quota**, with the same facts.
 
 Every successful read appends a sample to a local history file (`~/.dsh/kimi-coding-quota-history.json`,
-seven-day retention, one per minute at most); the trend view shows the newest samples as a sparkline and
-projects the hours left until each window reaches 100% from the pace of the last two hours. The projection
-needs at least six recent samples and a clearly rising slope, and appears in the panels, the chat popover,
-and the `kimi_coding_usage` report. Quota reads share a 60-second cache; pass `force: true` to
-`kimi_coding_usage` (or use the panels' refresh actions) to bypass it.
+seven-day retention, one per minute at most). Samples are isolated per profile, quota endpoint, and
+credential reference — the context is a hash of those three identifiers, so no API key or URL credential
+is persisted; a context with no history starts empty. The trend view shows the newest samples as a
+sparkline and projects the hours left until each window reaches 100% from the pace of the last two hours
+of the current quota cycle. A projection never exceeds the window's own reset time: when the pace would
+outrun the reset, no countdown is shown for that window. The projection needs at least six recent samples
+and a clearly rising slope, and appears in the panels, the chat popover, and the `kimi_coding_usage`
+report. Quota reads share a 60-second cache and a single in-flight request per context; pass
+`force: true` to `kimi_coding_usage` (or use the panels' refresh actions) to bypass both. Cancelling one
+caller never aborts the shared request the other callers are waiting on.
 
 The endpoint is not a stable public API contract, so malformed or changed responses produce an
 error rather than invented values. Only normalized quota fields leave the Host. Upstream user

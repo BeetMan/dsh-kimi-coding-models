@@ -2,7 +2,11 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { appendSample, projectHoursToExhaustion, TREND_RETENTION_MS, trendView } from '../quota-trend.js'
 
-const sample = (t, rolling, weekly = 10) => ({ t, rollingPercent: rolling, weeklyPercent: weekly })
+const RESET = '2026-11-24T10:00:00.000Z'
+const NEXT_RESET = '2026-11-24T15:00:00.000Z'
+const sample = (t, rolling, weekly = 10, rollingResetAt = RESET, weeklyResetAt = RESET) => ({
+  t, rollingPercent: rolling, weeklyPercent: weekly, rollingResetAt, weeklyResetAt,
+})
 
 test('appendSample prunes entries older than the retention window', () => {
   const now = 1_800_000_000_000
@@ -12,34 +16,67 @@ test('appendSample prunes entries older than the retention window', () => {
 })
 
 test('appendSample rejects malformed samples', () => {
-  assert.throws(() => appendSample([], { t: 1, rollingPercent: 10 }), /quota sample/)
+  assert.throws(() => appendSample([], { t: 1, rollingPercent: 10 }), /weeklyPercent/)
+  assert.throws(() => appendSample([], { t: 1, rollingPercent: 10, weeklyPercent: 5 }), /rollingResetAt/)
+  assert.throws(() => appendSample([], sample(1, 10, 5, 'not-a-date')), /rollingResetAt/)
 })
 
 test('a steady climb projects the hours left until exhaustion', () => {
-  const now = 1_800_000_000_000
-  // 1%/min climb for ten minutes, sitting at 80% now -> 20 points / 60 points-per-hour.
-  const samples = Array.from({ length: 11 }, (_, index) => sample(now - (10 - index) * 60_000, 70 + index))
+  const resetAt = '2026-11-24T10:00:00.000Z'
+  const resetMs = Date.parse(resetAt)
+  const now = resetMs - 3 * 60 * 60 * 1000
+  // 1%/min climb for ten minutes, sitting at 80% three hours before reset.
+  const samples = Array.from({ length: 11 }, (_, index) => sample(now - (10 - index) * 60_000, 70 + index, 10, resetAt))
   const hours = projectHoursToExhaustion(samples, 'rollingPercent', now)
   assert.ok(Math.abs(hours - 20 / 60) < 0.01)
 })
 
+test('a window that resets before the projected exhaustion reports none', () => {
+  const resetAt = '2026-11-24T10:00:00.000Z'
+  const resetMs = Date.parse(resetAt)
+  const now = resetMs - 30 * 60 * 1000 // half an hour before reset
+  const samples = Array.from({ length: 11 }, (_, index) => sample(now - (10 - index) * 60_000, 70 + index, 10, resetAt))
+  // Pace says exhaustion in ~20 minutes... but the climb is 1/min from 80%: (100-80)/60 = 1/3h = 20min < 30min — should show.
+  assert.equal(typeof projectHoursToExhaustion(samples, 'rollingPercent', now), 'number')
+  // A faster climb still hits reset first: 4%/min from 90% -> 2.5min? no: (100-90)/240 = 0.04h. Make reset 2 minutes away instead.
+  const later = resetMs - 2 * 60 * 1000
+  const lateSamples = Array.from({ length: 11 }, (_, index) => sample(later - (10 - index) * 60_000, 86 + index * 4, 10, resetAt))
+  assert.equal(projectHoursToExhaustion(lateSamples, 'rollingPercent', later), undefined)
+})
+
+test('projections ignore samples from a previous cycle', () => {
+  const oldReset = '2026-11-23T10:00:00.000Z'
+  const newReset = '2026-11-24T10:00:00.000Z'
+  const newResetMs = Date.parse(newReset)
+  const now = newResetMs - 2 * 60 * 60 * 1000
+  const oldCycle = Array.from({ length: 8 }, (_, index) => sample(now - (30 - index) * 60_000, 95 + index, 10, oldReset))
+  const newCycle = Array.from({ length: 5 }, (_, index) => sample(now - (4 - index) * 60_000, 10 + index, 10, newReset))
+  const hours = projectHoursToExhaustion([...oldCycle, ...newCycle], 'rollingPercent', now)
+  // Only the five new-cycle samples count: 1%/min from 14%, two hours to reset.
+  assert.ok(hours !== undefined && hours < 2)
+})
+
 test('a flat or shrinking window reports no exhaustion', () => {
-  const now = 1_800_000_000_000
+  const now = Date.parse(RESET) - 3 * 60 * 60 * 1000
   const flat = Array.from({ length: 10 }, (_, index) => sample(now - (9 - index) * 60_000, 40))
   assert.equal(projectHoursToExhaustion(flat, 'rollingPercent', now), undefined)
   const falling = Array.from({ length: 10 }, (_, index) => sample(now - (9 - index) * 60_000, 90 - index))
   assert.equal(projectHoursToExhaustion(falling, 'rollingPercent', now), undefined)
 })
 
-test('too little recent data projects nothing', () => {
-  const now = 1_800_000_000_000
+test('too little recent or new-cycle data projects nothing', () => {
+  const now = Date.parse(RESET) - 3 * 60 * 60 * 1000
   const sparse = [sample(now - 3 * 60_000, 50), sample(now, 55)]
   assert.equal(projectHoursToExhaustion(sparse, 'rollingPercent', now), undefined)
+  const oldCycle = Array.from({ length: 10 }, (_, index) => sample(now - (9 - index) * 60_000, 80 + index, 10, NEXT_RESET))
+  const fresh = sample(now, 5, 10)
+  assert.equal(projectHoursToExhaustion([...oldCycle, fresh], 'rollingPercent', now), undefined)
 })
 
 test('trendView caps the series and nulls missing projections', () => {
   const now = 1_800_000_000_000
-  const samples = Array.from({ length: 100 }, (_, index) => sample(now - (99 - index) * 60_000, index / 10))
+  const farReset = new Date(now + 30 * 24 * 60 * 60 * 1000).toISOString()
+  const samples = Array.from({ length: 100 }, (_, index) => sample(now - (99 - index) * 60_000, index / 10, 10, farReset, farReset))
   const view = trendView(samples, 60, now)
   assert.equal(view.rolling.length, 60)
   assert.equal(view.weekly.length, 60)

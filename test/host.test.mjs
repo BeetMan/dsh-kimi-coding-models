@@ -96,4 +96,21 @@ test('Host catalog and quota operations', { skip: !process.env.DSH_INSTALL_DIR &
   pending.resolve(Response.json({ data: listing }))
   await check
   assert.equal((await catalog({ apply: true })).applied, true)
+
+  // A pin toggle during the catalog flight is honored by the write.
+  listing = [{ id: 'k3' }]
+  profile = initial
+  config.pinnedModels = []
+  const pendingPin = Promise.withResolvers()
+  request.mock.mockImplementationOnce(() => pendingPin.promise)
+  const pinnedSync = catalog({ apply: true })
+  config.pinnedModels = ['local']
+  pendingPin.resolve(Response.json({ data: listing }))
+  const pinnedResult = await pinnedSync
+  assert.equal(pinnedResult.applied, true)
+  assert.deepEqual(pinnedResult.pinnedKept, ['local'])
+  assert.deepEqual(profile.providers['kimi-coding'].models.map(model => model.id), ['k3', 'local'])
+  // A stale confirmation from before the pin change no longer writes.
+  const staleAfterPin = await ui(pinnedResult.syncToken)
+  assert.equal(staleAfterPin.confirmationStale, true)
 })
