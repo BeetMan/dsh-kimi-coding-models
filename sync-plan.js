@@ -117,14 +117,16 @@ export function createSyncPlan(live, currentRoute, served, config) {
     baseURL: typeof currentRoute?.baseURL === 'string' ? currentRoute.baseURL : config.baseURL,
     models,
   })
+  const expectedRouteFingerprint = syncValueFingerprint(currentRoute ?? null)
   return {
     added,
     kept,
     removed,
     changed,
     route,
-    expectedRouteFingerprint: syncValueFingerprint(currentRoute ?? null),
+    expectedRouteFingerprint,
     syncToken: syncValueFingerprint({
+      expectedRouteFingerprint,
       endpoint: config.endpoint,
       credentialRef: config.apiKeyEnv,
       served: [...served].sort(),

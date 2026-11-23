@@ -1,7 +1,7 @@
 {
   "meta": {
     "title": "Kimi Coding 模型与额度",
-    "description": "让当前 profile 的 kimi-coding 路由与 Kimi Coding 线上模型目录保持一致：在 Settings → Kimi Coding 中检查并同步模型（可选启动时或按间隔自动同步）、为每个模型设置上下文窗口与输出上限，并查看 5 小时与 7 天订阅额度及重置倒计时。聊天使用 Kimi Coding 时，还可在输入框旁显示紧凑额度胶囊。模型与额度请求会使用你配置的凭据访问 api.kimi.com；API 密钥不会离开 Host。需要 profile 的 llm-pi-ai 路由中已声明 kimi-coding。",
+    "description": "让当前 profile 的 kimi-coding 路由与 Kimi Coding 线上模型目录保持一致：在 Settings → Kimi Coding 中检查并同步模型（可选启动时或按间隔自动同步）、为每个模型设置上下文窗口与输出上限，并查看 5 小时与 7 天订阅额度及重置倒计时。聊天使用 Kimi Coding 时，还可在输入框旁显示紧凑额度胶囊。模型与额度请求会使用你配置的凭据访问配置的端点（默认为 api.kimi.com）。需要 profile 的 llm-pi-ai 路由中已声明 kimi-coding。",
     "detail": "docs/DETAIL.md"
   }
 }

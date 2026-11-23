@@ -38,6 +38,10 @@ test('a confirmation is bound to endpoint, live plan, and current route', () => 
 
   const changedLive = createSyncPlan(live.slice(0, 1), route, ['k3'], config)
   const changedRoute = createSyncPlan(live, { ...route, baseURL: 'https://example.invalid/v1' }, ['k3'], config)
+  const unserved = createSyncPlan(live, { ...route, models: [...route.models, { id: 'local-only' }] }, ['k3'], config)
+  assert.deepEqual(unserved.route, plan.route)
+  assert.deepEqual(unserved.removed, ['local-only'])
+  assert.equal(isSyncConfirmationCurrent(unserved, plan.syncToken), false)
   const changedEndpoint = createSyncPlan(live, route, ['k3'], { ...config, endpoint: 'https://example.invalid/models' })
   const changedServed = createSyncPlan(live, route, ['k3', 'served-old'], config)
   assert.equal(isSyncConfirmationCurrent(plan, changedLive.syncToken), false)

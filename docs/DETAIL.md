@@ -99,10 +99,12 @@ plugin reload. The first tick after enabling an interval runs one sync immediate
 attempts are spaced by the interval. At most one sync — interval, startup, Settings, or agent
 tool — runs at a time, and the scheduler skips a tick when another one is in flight. Interval
 synchronization is a background write: unlike the Settings page it has no removal confirmation,
-so a model Kimi stops publishing is dropped silently on the next interval sync. A successful
+so a model Kimi stops publishing is dropped silently on the next interval sync. A listing with an invalid model ID stops the sync. An empty listing that would remove models
+requires review and confirmation in Settings, including when the request originated from an agent or startup sync. A successful
 write is logged; failures are logged and retried on the next interval.
 
-Changes are staged until **Save settings**. Validation rejects non-HTTP(S) endpoints, malformed
+Changes are staged until **Save settings**. Remote endpoints require HTTPS. Local HTTP proxies can use localhost, a 127.x.x.x address, or [::1].
+Catalog reports and request errors show only the endpoint origin and path. Validation rejects malformed
 credential names, non-positive output caps, and an interval outside 0–10080. Saves carry the
 draft's starting revision: a concurrent change produces a conflict notice and preserves the
 draft; only a second explicit save may overwrite it. **Discard changes** drops the staged edits.

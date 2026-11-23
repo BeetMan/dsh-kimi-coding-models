@@ -166,35 +166,54 @@ async function resolveApiKey(ctx, name) {
   return typeof ambient === 'string' && ambient.length > 0 ? ambient : undefined
 }
 
-/** Read the live catalog. */
-async function fetchLiveModels(config, apiKey, signal) {
-  const headers = { accept: 'application/json' }
-  if (apiKey !== undefined) headers.authorization = `Bearer ${apiKey}`
+/** Accept HTTPS endpoints and HTTP proxies on the loopback interface. */
+function endpointUrl(value) {
+  const url = URL.parse(value)
+  if (url?.protocol === 'https:') return url
+  if (url?.protocol === 'http:') {
+    const host = url.hostname
+    if (host === 'localhost' || host === '[::1]' || /^127(?:\.\d+){3}$/.test(host)) return url
+  }
+  throw new Error('use an HTTPS endpoint or a loopback HTTP address')
+}
+
+/** Keep credentials and query parameters out of reports and diagnostics. */
+function displayEndpoint(url) {
+  return url.origin + url.pathname
+}
+
+async function readEndpoint(url, headers, signal) {
+  const label = displayEndpoint(url)
+  const deadline = AbortSignal.timeout(30_000)
+  const requestSignal = signal === undefined ? deadline : AbortSignal.any([signal, deadline])
   let response
-  let requestSignal
   try {
-    const deadline = AbortSignal.timeout(30_000)
-    requestSignal = signal === undefined ? deadline : AbortSignal.any([signal, deadline])
-    response = await fetch(config.endpoint, { headers, signal: requestSignal })
-  } catch (error) {
-    const reason = signal?.aborted ? 'cancelled' : requestSignal?.aborted ? 'timed out after 30 seconds' : 'unreachable'
-    throw new Error(`could not read ${config.endpoint} (${reason})`, { cause: error })
+    response = await fetch(url, { headers, signal: requestSignal })
+  } catch {
+    const reason = signal?.aborted ? 'cancelled' : deadline.aborted ? 'timed out after 30 seconds' : 'unreachable'
+    throw new Error(`could not read ${label} (${reason})`)
   }
   if (!response.ok) {
     const hint = response.status === 401 || response.status === 403 ? '; check the Kimi Coding API key' : ''
-    throw new Error(`${config.endpoint} answered ${response.status}${hint}`)
+    throw new Error(`${label} answered ${response.status}${hint}`)
   }
-  let body
   try {
-    body = await response.json()
-  } catch (error) {
-    throw new Error(`${config.endpoint} did not answer JSON`, { cause: error })
+    return await response.json()
+  } catch {
+    throw new Error(`${label} did not answer JSON`)
   }
-  const rows = Array.isArray(body?.data) ? body.data : undefined
-  if (rows === undefined) throw new Error(`${config.endpoint} did not answer a model listing`)
-  return rows
-    .filter(row => row !== null && typeof row === 'object' && typeof row.id === 'string' && row.id.length > 0)
-    .map(toLiveModel)
+}
+
+/** Read the complete live catalog before planning any removals. */
+async function fetchLiveModels(url, apiKey, signal) {
+  const headers = { accept: 'application/json' }
+  if (apiKey !== undefined) headers.authorization = `Bearer ${apiKey}`
+  const body = await readEndpoint(url, headers, signal)
+  if (!Array.isArray(body?.data)) throw new Error(`${displayEndpoint(url)} did not answer a model listing`)
+  if (body.data.some(row => typeof row?.id !== 'string' || !row.id.trim())) {
+    throw new Error(`${displayEndpoint(url)} returned a model without a valid id`)
+  }
+  return body.data.map(toLiveModel)
 }
 
 /** A finite non-negative number from Kimi's string-or-number quota fields. */
@@ -230,24 +249,7 @@ async function readUsage(ctx, config, signal) {
   const apiKey = await resolveApiKey(ctx, config.apiKeyEnv)
   const headers = { accept: 'application/json', 'user-agent': 'KimiCLI/1.6' }
   if (apiKey !== undefined) headers.authorization = `Bearer ${apiKey}`
-  let response
-  try {
-    const deadline = AbortSignal.timeout(30_000)
-    const requestSignal = signal === undefined ? deadline : AbortSignal.any([signal, deadline])
-    response = await fetch(config.usageEndpoint, { headers, signal: requestSignal })
-  } catch (error) {
-    throw new Error(`could not reach ${config.usageEndpoint}`, { cause: error })
-  }
-  if (!response.ok) {
-    const hint = response.status === 401 || response.status === 403 ? '; check the Kimi Coding API key' : ''
-    throw new Error(`${config.usageEndpoint} answered ${response.status}${hint}`)
-  }
-  let body
-  try {
-    body = await response.json()
-  } catch (error) {
-    throw new Error(`${config.usageEndpoint} did not answer JSON`, { cause: error })
-  }
+  const body = await readEndpoint(endpointUrl(config.usageEndpoint), headers, signal)
   const rolling = Array.isArray(body?.limits)
     ? body.limits.find(item => item?.window?.duration === 300 && item?.window?.timeUnit === 'TIME_UNIT_MINUTE') ?? body.limits[0]
     : undefined
@@ -345,17 +347,25 @@ async function writeModelSettings(ctx, settings) {
 /** One check-and-optionally-write pass shared by the tool, UI, and startup sync. */
 async function sync(ctx, config, apply, signal, options = {}) {
   const apiKey = await resolveApiKey(ctx, config.apiKeyEnv)
-  const live = await fetchLiveModels(config, apiKey, signal)
+  const endpoint = endpointUrl(config.endpoint)
+  const live = await fetchLiveModels(endpoint, apiKey, signal)
   const served = await servedModelIds(ctx)
-  const plan = createSyncPlan(live, configuredRoute(ctx), served, config)
+  const route = configuredRoute(ctx)
+  const plan = createSyncPlan(live, route, served, config)
+  if (apply && live.length === 0 && plan.removed.length > 0 && !options.requireConfirmation) {
+    throw new Error('the catalog is empty; review and confirm the removals in Settings → Kimi Coding')
+  }
   const confirmationCurrent = !options.requireConfirmation
     || isSyncConfirmationCurrent(plan, options.confirmation)
   const staleConfirmation = Boolean(apply && plan.changed && !confirmationCurrent)
   const write = apply && plan.changed && confirmationCurrent
-  if (write) await writeRoute(ctx, plan)
+  if (write) {
+    if (typeof route?.baseURL !== 'string') endpointUrl(config.baseURL)
+    await writeRoute(ctx, plan)
+  }
   return {
     provider: PROVIDER,
-    endpoint: config.endpoint,
+    endpoint: displayEndpoint(endpoint),
     checkedAt: new Date().toISOString(),
     live: live.map(model => ({ id: model.id, name: model.name })),
     served: write ? await servedModelIds(ctx) : served,
@@ -444,9 +454,13 @@ function formatReport(value) {
   } else {
     if (value.added.length > 0) lines.push(`Not served yet: ${value.added.join(', ')}`)
     if (value.removed.length > 0) lines.push(`Configured or served but no longer published: ${value.removed.join(', ')}`)
-    lines.push(value.changed
-      ? 'Nothing was written. Call again with apply: true to update the route.'
-      : 'The route already matches the live catalog.')
+    if (value.live.length === 0 && value.removed.length > 0) {
+      lines.push('Review and confirm the empty catalog in Settings → Kimi Coding to remove these models.')
+    } else {
+      lines.push(value.changed
+        ? 'Nothing was written. Call again with apply: true to update the route.'
+        : 'The route already matches the live catalog.')
+    }
   }
   return lines.join('\n')
 }
@@ -529,6 +543,7 @@ export function apply(ctx, config) {
   // one in-flight flag so a background write never races a foreground one.
   let syncing = false
   const runSync = async (apply, signal, options) => {
+    if (syncing) throw new Error('a Kimi Coding catalog check or sync is already in progress')
     syncing = true
     try {
       return await sync(ctx, current(), apply, signal, options)

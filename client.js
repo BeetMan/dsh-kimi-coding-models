@@ -75,11 +75,11 @@ window.__ModuleLoader__.load({
       durationMinute: 'm',
       membership: 'Membership',
       usageEndpoint: 'Quota endpoint',
-      usageEndpointHint: 'HTTP(S) URL returning Kimi Coding subscription usage.',
+      usageEndpointHint: 'Endpoint returning Kimi Coding subscription usage.',
       settings: 'Synchronization settings',
       settingsHint: 'Changes are saved to this DSH profile.',
       endpoint: 'Catalog endpoint',
-      endpointHint: 'HTTP(S) URL returning the OpenAI-compatible model list.',
+      endpointHint: 'Endpoint returning the OpenAI-compatible model list.',
       baseURL: 'Route base URL',
       baseURLHint: 'Used only when the kimi-coding route does not already declare one.',
       apiKeyEnv: 'Credential reference',
@@ -119,7 +119,7 @@ window.__ModuleLoader__.load({
       unavailable: 'Settings are unavailable in this profile.',
       readOnly: 'This profile is read-only; settings cannot be changed here.',
       overridden: 'Customized',
-      invalidUrl: 'Enter a valid HTTP or HTTPS URL.',
+      invalidUrl: 'Use HTTPS, or HTTP with a loopback address.',
       invalidCredentialRef: 'Use an environment-variable name such as KIMI_CODING_API_KEY.',
       invalidTokens: 'Enter a positive whole number.',
       invalidInterval: 'Enter 0 to disable, or a whole number of minutes between 1 and 10080.',
@@ -177,11 +177,11 @@ window.__ModuleLoader__.load({
       durationMinute: '分钟',
       membership: '会员等级',
       usageEndpoint: '额度接口地址',
-      usageEndpointHint: '返回 Kimi Coding 订阅用量的 HTTP(S) 地址。',
+      usageEndpointHint: '返回 Kimi Coding 订阅用量的端点地址。',
       settings: '同步设置',
       settingsHint: '修改会保存到当前 DSH profile。',
       endpoint: '模型目录地址',
-      endpointHint: '返回 OpenAI 兼容模型列表的 HTTP(S) 地址。',
+      endpointHint: '返回 OpenAI 兼容模型列表的端点地址。',
       baseURL: '路由 Base URL',
       baseURLHint: '仅在 kimi-coding 路由尚未声明 Base URL 时写入。',
       apiKeyEnv: '凭据变量名',
@@ -221,7 +221,7 @@ window.__ModuleLoader__.load({
       unavailable: '当前 profile 无法使用设置服务。',
       readOnly: '当前 profile 为只读，不能在这里修改设置。',
       overridden: '已自定义',
-      invalidUrl: '请输入有效的 HTTP 或 HTTPS URL。',
+      invalidUrl: '请输入 HTTPS 地址；本机回环地址也支持 HTTP。',
       invalidCredentialRef: '请输入环境变量名称，例如 KIMI_CODING_API_KEY。',
       invalidTokens: '请输入正整数。',
       invalidInterval: '请填写 0（关闭），或 1–10080 之间的整数分钟。',
@@ -854,7 +854,8 @@ window.__ModuleLoader__.load({
     function validUrl(value) {
       try {
         const url = new URL(value)
-        return url.protocol === 'http:' || url.protocol === 'https:'
+        return url.protocol === 'https:' || (url.protocol === 'http:'
+          && (url.hostname === 'localhost' || url.hostname === '[::1]' || /^127(?:\.\d+){3}$/.test(url.hostname)))
       } catch {
         return false
       }
