@@ -7,8 +7,9 @@ invisible in model selectors until the profile declares it.
 
 This plugin keeps the `kimi-coding` route aligned with the live catalog through either a
 Settings page or the `kimi_coding_models` agent tool. Both call the same Host operation.
-It also reads the current subscription quota through the `kimi_coding_usage` tool or the
-Settings page's **Refresh quota** action.
+It also reads the current subscription quota through the `kimi_coding_usage` tool, or shows
+it on the Settings page — the panel renders the cached reading as soon as it opens and
+refreshes on demand through **Refresh quota**.
 
 ## Subscription quota
 

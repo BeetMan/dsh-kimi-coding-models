@@ -77,7 +77,7 @@ window.__ModuleLoader__.load({
       quotaHint: 'Read the current 5-hour rolling window and 7-day subscription quota.',
       refreshQuota: 'Refresh quota',
       refreshingQuota: 'Reading quota…',
-      quotaFirst: 'Select Refresh quota to read the latest subscription usage.',
+      quotaFirst: 'Reading the latest subscription usage…',
       rollingQuota: '5-hour rolling window',
       weeklyQuota: '7-day quota',
       used: 'used',
@@ -189,7 +189,7 @@ window.__ModuleLoader__.load({
       quotaHint: '读取当前 5 小时滚动窗口和 7 天订阅额度。',
       refreshQuota: '刷新额度',
       refreshingQuota: '正在读取额度…',
-      quotaFirst: '点击“刷新额度”读取最新订阅用量。',
+      quotaFirst: '正在读取最新订阅用量…',
       rollingQuota: '5 小时滚动窗口',
       weeklyQuota: '7 天额度',
       used: '已用',
@@ -944,14 +944,17 @@ window.__ModuleLoader__.load({
       React.useEffect(() => {
         activeController.current?.abort()
         setState({ busy: false, result: null, error: null, stale: false })
+        // Show the current quota right away: a cached reading renders
+        // immediately, a cold cache performs one upstream read.
+        void refresh(false)
       }, [contextKey])
-      const refresh = async () => {
+      const refresh = async (force = true) => {
         activeController.current?.abort()
         const controller = new AbortController()
         activeController.current = controller
         setState(previous => ({ ...previous, busy: true, error: null, stale: false }))
         try {
-          const result = await props.usage(true, controller.signal)
+          const result = await props.usage(force, controller.signal)
           if (mounted.current && activeController.current === controller) {
             setState({ busy: false, result, error: null, stale: false })
           }
@@ -1331,8 +1334,8 @@ window.__ModuleLoader__.load({
       return h('div', { style: styles.page },
         h(SyncPanel, props),
         h(ModelSettingsPanel, props),
-        h(QuotaPanel, props),
-        h(SettingsPanel, props))
+        h(SettingsPanel, props),
+        h(QuotaPanel, props))
     }
 
     return {
