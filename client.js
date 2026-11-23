@@ -91,9 +91,10 @@ window.__ModuleLoader__.load({
       settings: 'Synchronization settings',
       settingsHint: 'Changes are saved to this DSH profile.',
       platform: 'Platform',
-      platformHint: 'Fills the three endpoint fields below with the preset for the chosen Kimi Code platform. If the profile route declares its own base URL, update that row to the same host; the two platforms issue different API keys.',
+      platformHint: 'Fills the three endpoint fields below with the preset for the chosen Kimi Code platform. A mix of official and custom addresses shows as Custom. If the profile route declares its own base URL, update that row to the same host; the two platforms issue different API keys.',
       platform_china: 'China (api.kimi.com)',
       platform_global: 'Overseas (api.kimi.ai)',
+      platform_custom: 'Custom (mixed endpoints)',
       endpoint: 'Catalog endpoint',
       endpointHint: 'Endpoint returning the OpenAI-compatible model list.',
       baseURL: 'Route base URL',
@@ -197,9 +198,10 @@ window.__ModuleLoader__.load({
       settings: '同步设置',
       settingsHint: '修改会保存到当前 DSH profile。',
       platform: '平台',
-      platformHint: '用所选 Kimi Code 平台的预设值回填下方三个端点字段。若 profile 路由自带 Base URL，请同步改为同一域名；两个平台签发的 API 密钥不互通。',
+      platformHint: '用所选 Kimi Code 平台的预设值回填下方三个端点字段。官方与自定义地址混用时显示为“自定义”。若 profile 路由自带 Base URL，请同步改为同一域名；两个平台签发的 API 密钥不互通。',
       platform_china: '中国版 (api.kimi.com)',
       platform_global: '国际版 (api.kimi.ai)',
+      platform_custom: '自定义（混合端点）',
       endpoint: '模型目录地址',
       endpointHint: '返回 OpenAI 兼容模型列表的端点地址。',
       baseURL: '路由 Base URL',
@@ -966,9 +968,13 @@ window.__ModuleLoader__.load({
           h('label', { htmlFor: `kimi-coding-${field}`, style: styles.label }, t(field)),
           h('p', { id: `kimi-coding-${field}-hint`, style: styles.hint }, t(`${field}Hint`))))
       const platformOf = (current) => {
-        if (current.endpoint === PLATFORMS.china.endpoint) return 'china'
-        if (current.endpoint === PLATFORMS.global.endpoint) return 'global'
-        return current.platform ?? 'china'
+        for (const key of ['china', 'global']) {
+          const preset = PLATFORMS[key]
+          if (current.endpoint === preset.endpoint
+            && current.usageEndpoint === preset.usageEndpoint
+            && current.baseURL === preset.baseURL) return key
+        }
+        return 'custom'
       }
       const platformField = () => h('div', { style: styles.field },
         h('label', { style: styles.label, htmlFor: 'kimi-coding-platform' },
@@ -985,7 +991,10 @@ window.__ModuleLoader__.load({
             edit('usageEndpoint', preset.usageEndpoint)
             edit('baseURL', preset.baseURL)
           },
-        }, ['china', 'global'].map(key => h('option', { key, value: key }, t(`platform_${key}`)))),
+        }, ['china', 'global'].map(key => h('option', { key, value: key }, t(`platform_${key}`)))
+          .concat(platformOf(values) === 'custom'
+            ? [h('option', { key: 'custom', value: 'custom', disabled: true }, t('platform_custom'))]
+            : [])),
         h('p', { id: 'kimi-coding-platform-hint', style: styles.hint }, t('platformHint')))
       const styleField = () => h('div', { style: styles.field },
         h('label', { style: styles.label, htmlFor: 'kimi-coding-chatQuotaStyle' }, t('chatQuotaStyle')),

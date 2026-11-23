@@ -24,6 +24,7 @@ test('Host catalog and quota operations', { skip: !process.env.DSH_INSTALL_DIR &
     defaultMaxTokens: 131072,
     syncOnStart: false,
     syncIntervalMinutes: 0,
+    platform: 'china',
     showChatQuota: true,
     chatQuotaStyle: 'badge',
     chatQuotaBorder: true,
