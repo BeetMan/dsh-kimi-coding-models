@@ -88,8 +88,10 @@ Read subscription quota:
 kimi_coding_usage({})
 ```
 
-Existing route entries are preserved verbatim. A model already described by the installed
-catalog stays a bare `{ id }` entry, retaining catalog-owned capacities and compatibility. A
+Existing route entries keep their configured fields. Their display names are normalized to a
+single `Kimi` prefix (for example, `K3.1 Pro` becomes `Kimi K3.1 Pro`), including on models
+written by an earlier plugin version. A model already described by the installed catalog without
+a configured name stays a bare `{ id }` entry, retaining catalog-owned capacities and compatibility. A
 newly discovered model receives a complete entry from the listing, including context window,
 input modalities, reasoning efforts, and Kimi's OpenAI Chat Completions compatibility fields.
 

@@ -123,11 +123,18 @@ function effortsOf(entry) {
   return Object.keys(efforts).length > 0 ? efforts : undefined
 }
 
+/** Normalize selector labels to a single, recognizable Kimi prefix. */
+function kimiDisplayName(raw) {
+  const name = String(raw).trim()
+  return /^kimi(?:\s|[-_]|$)/i.test(name) ? name : `Kimi ${name}`
+}
+
 /** One live catalog entry reduced to the fields a route entry needs. */
 function toLiveModel(entry) {
+  const displayName = typeof entry.display_name === 'string' && entry.display_name.length > 0 ? entry.display_name : entry.id
   return {
     id: entry.id,
-    name: typeof entry.display_name === 'string' && entry.display_name.length > 0 ? entry.display_name : entry.id,
+    name: kimiDisplayName(displayName),
     contextWindow: positiveInt(entry.context_length) ?? positiveInt(entry.limit?.context),
     maxTokens: positiveInt(entry.limit?.output) ?? positiveInt(entry.max_output_tokens),
     input: inputsOf(entry),
@@ -265,10 +272,11 @@ function configuredModels(ctx) {
 }
 
 /**
- * Build the next model list. A model already written keeps its entry verbatim;
- * a model the route already serves but the profile does not declare stays a
- * bare `{ id }` so the installed catalog keeps describing it; every other model
- * gets a complete entry derived from the listing.
+ * Build the next model list. Existing entries keep their fields, with only
+ * their display names normalized to the Kimi prefix; a model the route already
+ * serves but the profile does not declare stays a bare `{ id }` so the installed
+ * catalog keeps describing it; every other model gets a complete entry derived
+ * from the listing.
  */
 function buildModels(live, existing, served, config) {
   const written = new Map()
@@ -278,7 +286,10 @@ function buildModels(live, existing, served, config) {
   const servedSet = new Set(served)
   return live.map((model) => {
     const kept = written.get(model.id)
-    if (kept !== undefined) return kept
+    if (kept !== undefined) {
+      if (typeof kept.name === 'string' && kept.name !== model.name) return { ...kept, name: model.name }
+      return kept
+    }
     if (servedSet.has(model.id)) return { id: model.id }
     const entry = {
       id: model.id,
@@ -330,7 +341,7 @@ async function sync(ctx, config, apply, signal) {
   const models = buildModels(live, existing, served, config)
   const unchanged = existing !== undefined
     && existing.length === models.length
-    && existing.every((entry, index) => entry?.id === models[index]?.id)
+    && existing.every((entry, index) => entry?.id === models[index]?.id && entry?.name === models[index]?.name)
   const changed = added.length > 0 || removed.length > 0 || (existing !== undefined && !unchanged)
   if (apply && changed) await writeModels(ctx, config, models)
   return {
