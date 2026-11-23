@@ -1332,10 +1332,10 @@ window.__ModuleLoader__.load({
 
     function KimiCodingSettings(props) {
       return h('div', { style: styles.page },
+        h(QuotaPanel, props),
         h(SyncPanel, props),
         h(ModelSettingsPanel, props),
-        h(SettingsPanel, props),
-        h(QuotaPanel, props))
+        h(SettingsPanel, props))
     }
 
     return {
