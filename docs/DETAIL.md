@@ -62,7 +62,7 @@ The settings area edits the plugin's persisted profile configuration:
 | Route base URL | `https://api.kimi.com/coding/v1` | Written only when the route declares none |
 | Quota endpoint | `https://api.kimi.com/coding/v1/usages` | Subscription quota listing to read |
 | Credential reference | `KIMI_CODING_API_KEY` | Credential name, never the secret key itself |
-| Default output tokens | `32768` | Output cap when a new model's listing discloses none |
+| Default output tokens | `131072` | Output cap when a new model's listing discloses none; Kimi's documented default for the K3 family |
 | Sync when DSH starts | off | One background sync on the next plugin activation |
 | Interval sync (minutes) | `0` | One background sync at most once per interval while DSH runs; `0` disables it, otherwise 1–10080 |
 | Show quota in the chat window | on | Compact model-aware quota pill with one-minute refresh |
@@ -120,9 +120,10 @@ input modalities, reasoning efforts, and Kimi's OpenAI Chat Completions compatib
 - Synchronization replaces the route's model list with the complete live list, so a model Kimi
   stops publishing is removed on the next sync.
 - The live listing discloses no output cap, so a newly discovered model starts at the configured
-  default output tokens (32768). Kimi documents a `max_completion_tokens` default of 131072 for the
-  K3 and K3.1 families, so raise that setting before syncing one of those models if you want the
-  documented cap.
+  default output tokens, `131072` — the `max_completion_tokens` default Kimi documents for the K3
+  and K3.1 families (their documented maximum is `1048576`). The K2.x `kimi-for-coding` models have
+  smaller output caps; lower this setting before syncing a new model from that family if the
+  upstream rejects the cap.
 - Interval synchronization runs only while the DSH Host is running, with up to one minute of
   scheduling precision; a stopped Host performs no background sync.
 - A home patch or command-line overlay can override the route. In that case the configuration

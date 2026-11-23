@@ -45,8 +45,8 @@ const DEFAULT_BASE_URL = 'https://api.kimi.com/coding/v1'
 const DEFAULT_USAGE_ENDPOINT = 'https://api.kimi.com/coding/v1/usages'
 /** Default credential reference holding the Kimi Coding API key. */
 const DEFAULT_API_KEY_ENV = 'KIMI_CODING_API_KEY'
-/** Output cap assumed when the listing discloses none. */
-const DEFAULT_MAX_TOKENS = 32_768
+/** Output cap assumed when the listing discloses none; Kimi documents 131072 for K3. */
+const DEFAULT_MAX_TOKENS = 131_072
 /** Request modalities this harness can attach. */
 const SUPPORTED_INPUTS = new Set(['text', 'image'])
 /** Credential-reference grammar accepted by the Settings panel. */
