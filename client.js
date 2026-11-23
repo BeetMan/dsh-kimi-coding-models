@@ -598,10 +598,10 @@ window.__ModuleLoader__.load({
 
     function SectionIcon(props) {
       const size = props.size || 18
+      // A neutral geometric "K" drawn from strokes — not the Kimi brand mark.
       return h('svg', { width: size, height: size, viewBox: '0 0 24 24', fill: 'none', 'aria-hidden': true },
-        h('path', { d: 'M20 5v5h-5', stroke: 'currentColor', strokeWidth: 1.7, strokeLinecap: 'round', strokeLinejoin: 'round' }),
-        h('path', { d: 'M4 19v-5h5', stroke: 'currentColor', strokeWidth: 1.7, strokeLinecap: 'round', strokeLinejoin: 'round' }),
-        h('path', { d: 'M5.2 9.5A7.5 7.5 0 0 1 17.7 6.4L20 9M4 15l2.3 2.6a7.5 7.5 0 0 0 12.5-3.1', stroke: 'currentColor', strokeWidth: 1.7, strokeLinecap: 'round', strokeLinejoin: 'round' }))
+        h('path', { d: 'M7 5v14', stroke: 'currentColor', strokeWidth: 1.7, strokeLinecap: 'round' }),
+        h('path', { d: 'M17 5l-8 7 8 7', stroke: 'currentColor', strokeWidth: 1.7, strokeLinecap: 'round', strokeLinejoin: 'round' }))
     }
 
     function LockIcon(props) {
