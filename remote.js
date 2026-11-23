@@ -19,7 +19,9 @@ export function parseSyncResult(value) {
   }
   if (typeof value.provider !== 'string' || typeof value.endpoint !== 'string'
     || typeof value.checkedAt !== 'string' || !Number.isFinite(Date.parse(value.checkedAt))
-    || typeof value.applied !== 'boolean' || typeof value.changed !== 'boolean') {
+    || typeof value.applied !== 'boolean' || typeof value.changed !== 'boolean'
+    || typeof value.syncToken !== 'string' || value.syncToken.length === 0
+    || typeof value.confirmationStale !== 'boolean') {
     throw new Error('Invalid Kimi Coding sync result metadata')
   }
   if (!Array.isArray(value.live)) throw new Error('Invalid Kimi Coding live model list')
@@ -41,6 +43,8 @@ export function parseSyncResult(value) {
     removed: stringList(value.removed, 'removed'),
     applied: value.applied,
     changed: value.changed,
+    syncToken: value.syncToken,
+    confirmationStale: value.confirmationStale,
   }
 }
 
@@ -110,6 +114,21 @@ const applyCodec = {
   } }),
 }
 
+const confirmationCodec = {
+  mode: 'strict',
+  typeSymbol: 'dsh-kimi-coding-models#Confirmation',
+  schema: { parse: (value) => {
+    if (value === undefined) return undefined
+    if (typeof value !== 'string') throw new Error('confirmation must be a string')
+    return value
+  } },
+  create: () => ({ parse: (value) => {
+    if (value === undefined) return undefined
+    if (typeof value !== 'string') throw new Error('confirmation must be a string')
+    return value
+  } }),
+}
+
 /** Host registration and Client mount consume the same descriptors. */
 export const REMOTE = {
   package: 'dsh-kimi-coding-models',
@@ -140,7 +159,10 @@ export const REMOTE = {
       namespace: 'kimiCodingModels',
       method: 'sync',
       invocation: { kind: 'direct' },
-      parameters: [{ name: 'apply', wire: 'apply', source: 'json', codec: applyCodec }],
+      parameters: [
+        { name: 'apply', wire: 'apply', source: 'json', codec: applyCodec },
+        { name: 'confirmation', wire: 'confirmation', source: 'json', codec: confirmationCodec },
+      ],
       cancellation: { parameter: 'signal' },
       result: resultCodec,
     },

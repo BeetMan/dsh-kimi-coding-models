@@ -1,9 +1,12 @@
 {
   "name": "dsh-kimi-coding-models",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "private": true,
   "type": "module",
   "description": "Keep the kimi-coding LLM route in step with Kimi Coding's live model catalog",
+  "scripts": {
+    "test": "node --test test/*.test.mjs"
+  },
   "exports": {
     ".": "./index.js",
     "./client": "./client.js",
@@ -14,6 +17,7 @@
     "index.js",
     "client.js",
     "remote.js",
+    "sync-plan.js",
     "cordis.patch.yml",
     "locale/*.json",
     "docs",

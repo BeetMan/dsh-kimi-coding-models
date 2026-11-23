@@ -6,6 +6,7 @@ A DeepSeek Harness bundle that keeps the `kimi-coding` route aligned with Kimi C
 
 - **Settings → Kimi Coding** page with manual **Check for updates** and **Sync models now** actions.
 - Live model comparison, newly added and removed model reporting, actionable errors, and consistent `Kimi`-prefixed selector names.
+- Snapshot-bound removal confirmation, complete configured/served removal reporting, and bounded cancellable catalog requests.
 - **5-hour rolling** and **7-day** subscription quota display with remaining amounts and reset times.
 - A compact **chat-window quota pill** while the conversation uses `kimi-coding`, with a detail popover, manual refresh, and one-minute automatic refresh while visible.
 - Three persisted pill styles — **badge**, **plain text**, and **dual progress bars** — with live previews in Settings.

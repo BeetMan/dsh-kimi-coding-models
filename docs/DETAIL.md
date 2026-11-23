@@ -46,9 +46,13 @@ Open **Settings → Kimi Coding**.
 - **Sync models now** is enabled after a check. It writes the complete live list into the
   profile's `llm-pi-ai` row through the configuration editor. The route reloads, and the new
   models become selectable. The page always discloses that synchronization replaces the route
-  list; when models will be removed, it requires a second explicit confirmation.
-- The result lists every published model, marks missing or newly added models, names models
-  no longer published, and shows the check time and actionable failures.
+  list; when models will be removed, it requires a second explicit confirmation. That confirmation
+  is bound to the checked endpoint, catalog, configured route, and served-model snapshot. If any
+  of them changes, synchronization returns the latest plan without writing and requires a fresh review.
+- The result lists every published model, marks missing or newly added models, and names every
+  configured or currently served model that the write would remove. The result also displays its
+  catalog endpoint and check time. Catalog requests are bounded to 30 seconds and are cancelled
+  when the panel unmounts or its synchronization settings change.
 
 The settings area edits the plugin's persisted profile configuration:
 
@@ -66,7 +70,10 @@ The settings area edits the plugin's persisted profile configuration:
 Changes are staged until **Save settings**. Validation rejects non-HTTP(S) endpoints, malformed
 credential names, and non-positive output caps. Saves carry the draft's starting revision: a
 concurrent change produces a conflict notice and preserves the draft; only a second explicit
-save may overwrite it. **Discard changes** drops the staged edits.
+save may overwrite it. **Discard changes** drops the staged edits. Saving a new catalog endpoint,
+route base URL, credential reference, or output-token default invalidates an earlier model check.
+Saving a new quota endpoint or credential reference clears the old quota result so it cannot be
+mistaken for usage read from the new context.
 
 ## Agent tool
 

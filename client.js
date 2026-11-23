@@ -30,6 +30,7 @@ window.__ModuleLoader__.load({
       confirmSync: 'Confirm full sync',
       syncWarning: 'Sync replaces the route model list with the live catalog. Models no longer published will be removed.',
       removalWarning: 'This sync will also remove the models listed below. Select Confirm full sync to proceed.',
+      confirmationStale: 'The catalog or route changed since this check. Review the latest result and confirm again before anything is written.',
       syncing: 'Syncing…',
       checkFirst: 'Check the live catalog to see which models this profile is missing. Nothing is written until you sync.',
       upToDate: 'This profile already serves every published model.',
@@ -105,6 +106,7 @@ window.__ModuleLoader__.load({
       confirmSync: '确认完整同步',
       syncWarning: '同步会用线上目录替换路由模型列表，线上已下架的模型将被移除。',
       removalWarning: '本次同步还会移除下列模型。确认后继续，请点击“确认完整同步”。',
+      confirmationStale: '检查后模型目录或路由已变化。请查看最新结果并重新确认；此次没有写入任何配置。',
       syncing: '正在同步…',
       checkFirst: '点击“检查更新”查看当前缺少哪些模型。只有点击同步后才会写入配置。',
       upToDate: '当前 profile 已提供全部线上模型。',
@@ -183,7 +185,9 @@ window.__ModuleLoader__.load({
       }
       if (typeof value.provider !== 'string' || typeof value.endpoint !== 'string'
         || typeof value.checkedAt !== 'string' || !Number.isFinite(Date.parse(value.checkedAt))
-        || typeof value.applied !== 'boolean' || typeof value.changed !== 'boolean') {
+        || typeof value.applied !== 'boolean' || typeof value.changed !== 'boolean'
+        || typeof value.syncToken !== 'string' || value.syncToken.length === 0
+        || typeof value.confirmationStale !== 'boolean') {
         throw new Error('Invalid Kimi Coding sync result metadata')
       }
       if (!Array.isArray(value.live)) throw new Error('Invalid Kimi Coding live model list')
@@ -205,6 +209,8 @@ window.__ModuleLoader__.load({
         removed: stringList(value.removed, 'removed'),
         applied: value.applied,
         changed: value.changed,
+        syncToken: value.syncToken,
+        confirmationStale: value.confirmationStale,
       }
     }
     function parseQuotaWindow(value, field) {
@@ -262,6 +268,15 @@ window.__ModuleLoader__.load({
       schema: { parse: parseApply },
       create: () => ({ parse: parseApply }),
     }
+    const parseConfirmation = (value) => {
+      if (value === undefined) return undefined
+      if (typeof value !== 'string') throw new Error('confirmation must be a string')
+      return value
+    }
+    const confirmationCodec = {
+      mode: 'strict', typeSymbol: 'dsh-kimi-coding-models#Confirmation',
+      schema: { parse: parseConfirmation }, create: () => ({ parse: parseConfirmation }),
+    }
     const REMOTE = {
       package: 'dsh-kimi-coding-models',
       descriptors: [
@@ -281,7 +296,10 @@ window.__ModuleLoader__.load({
           id: 'dsh-kimi-coding-models#kimiCodingModels/sync',
           service: 'kimiCodingModels', namespace: 'kimiCodingModels', method: 'sync',
           invocation: { kind: 'direct' },
-          parameters: [{ name: 'apply', wire: 'apply', source: 'json', codec: applyCodec }],
+          parameters: [
+            { name: 'apply', wire: 'apply', source: 'json', codec: applyCodec },
+            { name: 'confirmation', wire: 'confirmation', source: 'json', codec: confirmationCodec },
+          ],
           cancellation: { parameter: 'signal' }, result: resultCodec,
         },
       ],
@@ -389,30 +407,59 @@ window.__ModuleLoader__.load({
     }
 
     function SyncPanel(props) {
-      const { t } = props
+      const { t, form } = props
       const [state, setState] = React.useState({ busy: null, result: null, error: null, stale: false })
       const [confirmRemoval, setConfirmRemoval] = React.useState(false)
       const mounted = React.useRef(true)
+      const activeController = React.useRef()
+      const config = React.useSyncExternalStore(
+        listener => form.subscribe(listener),
+        () => form.getSnapshot(),
+        () => form.getSnapshot(),
+      )
+      const contextKey = JSON.stringify([
+        config.value?.endpoint, config.value?.baseURL, config.value?.apiKeyEnv, config.value?.defaultMaxTokens,
+      ])
       React.useEffect(() => {
         mounted.current = true
-        return () => { mounted.current = false }
+        return () => {
+          mounted.current = false
+          activeController.current?.abort()
+        }
       }, [])
+      React.useEffect(() => {
+        activeController.current?.abort()
+        setConfirmRemoval(false)
+        setState({ busy: null, result: null, error: null, stale: false })
+      }, [contextKey])
       const run = async (kind) => {
+        activeController.current?.abort()
+        const controller = new AbortController()
+        activeController.current = controller
+        const confirmation = kind === 'sync' ? state.result?.syncToken : undefined
         setConfirmRemoval(false)
         setState(previous => ({ ...previous, busy: kind, error: null, stale: false }))
         try {
-          const result = kind === 'sync' ? await props.sync() : await props.check()
-          if (mounted.current) setState({ busy: null, result, error: null, stale: false })
+          const result = kind === 'sync'
+            ? await props.sync(confirmation, controller.signal)
+            : await props.check(controller.signal)
+          if (mounted.current && activeController.current === controller) {
+            setState({ busy: null, result, error: null, stale: false })
+          }
         } catch (error) {
-          if (mounted.current) setState(previous => ({
-            ...previous, busy: null, stale: previous.result !== null,
-            error: error instanceof Error ? error.message : String(error),
-          }))
+          if (mounted.current && activeController.current === controller && !controller.signal.aborted) {
+            setState(previous => ({
+              ...previous, busy: null, stale: previous.result !== null,
+              error: error instanceof Error ? error.message : String(error),
+            }))
+          }
+        } finally {
+          if (activeController.current === controller) activeController.current = undefined
         }
       }
       const result = state.result
       const busy = state.busy !== null
-      const needsConfirmation = result !== null && !result.applied && result.removed.length > 0
+      const needsConfirmation = result !== null && !result.applied && result.changed && result.removed.length > 0
       const requestSync = () => {
         if (needsConfirmation && !confirmRemoval) {
           setConfirmRemoval(true)
@@ -436,10 +483,12 @@ window.__ModuleLoader__.load({
             disabled: busy || !result || result.applied || !result.changed, onClick: requestSync,
           }, t(state.busy === 'sync' ? 'syncing' : confirmRemoval ? 'confirmSync' : 'sync'))),
         h('div', { 'aria-live': 'polite' }, h('p', { style: styles.status }, summary)),
+        result?.confirmationStale ? h('p', { role: 'alert', style: styles.error }, t('confirmationStale')) : null,
         confirmRemoval ? h('p', { role: 'alert', style: styles.error }, t('removalWarning')) : null,
         state.error ? h('p', { role: 'alert', style: styles.error }, `${t('operationFailed')}: ${state.error}`) : null,
         state.stale ? h('p', { style: styles.hint }, t('staleResult')) : null,
         result ? h(React.Fragment, null,
+          h('div', { style: styles.footer }, `${t('endpoint')}: ${result.endpoint}`),
           h('div', { style: styles.footer }, `${t('checkedAt')}: ${new Date(result.checkedAt).toLocaleString(props.getLocale?.())}`),
           result.removed.length > 0 ? h('p', { style: styles.status }, `${t('removed')}: ${result.removed.join(', ')}`) : null,
           h('div', null,
@@ -472,22 +521,45 @@ window.__ModuleLoader__.load({
     }
 
     function QuotaPanel(props) {
-      const { t } = props
+      const { t, form } = props
       const [state, setState] = React.useState({ busy: false, result: null, error: null, stale: false })
       const mounted = React.useRef(true)
+      const activeController = React.useRef()
+      const config = React.useSyncExternalStore(
+        listener => form.subscribe(listener),
+        () => form.getSnapshot(),
+        () => form.getSnapshot(),
+      )
+      const contextKey = JSON.stringify([config.value?.usageEndpoint, config.value?.apiKeyEnv])
       React.useEffect(() => {
         mounted.current = true
-        return () => { mounted.current = false }
+        return () => {
+          mounted.current = false
+          activeController.current?.abort()
+        }
       }, [])
+      React.useEffect(() => {
+        activeController.current?.abort()
+        setState({ busy: false, result: null, error: null, stale: false })
+      }, [contextKey])
       const refresh = async () => {
+        activeController.current?.abort()
+        const controller = new AbortController()
+        activeController.current = controller
         setState(previous => ({ ...previous, busy: true, error: null, stale: false }))
         try {
-          const result = await props.usage()
-          if (mounted.current) setState({ busy: false, result, error: null, stale: false })
+          const result = await props.usage(controller.signal)
+          if (mounted.current && activeController.current === controller) {
+            setState({ busy: false, result, error: null, stale: false })
+          }
         } catch (error) {
-          if (mounted.current) setState(previous => ({
-            ...previous, busy: false, stale: previous.result !== null, error: error instanceof Error ? error.message : String(error),
-          }))
+          if (mounted.current && activeController.current === controller && !controller.signal.aborted) {
+            setState(previous => ({
+              ...previous, busy: false, stale: previous.result !== null, error: error instanceof Error ? error.message : String(error),
+            }))
+          }
+        } finally {
+          if (activeController.current === controller) activeController.current = undefined
         }
       }
       const result = state.result
@@ -792,8 +864,8 @@ window.__ModuleLoader__.load({
             if (!result.ok) throw result.error
             return result.value
           }
-          const check = () => call('read')
-          const sync = () => call('sync', true)
+          const check = signal => call('read', signal)
+          const sync = (confirmation, signal) => call('sync', true, confirmation, signal)
           const usage = (signal) => call('usage', signal)
           const injected = () => ({
             form,

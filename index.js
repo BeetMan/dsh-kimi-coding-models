@@ -7,6 +7,7 @@ import { createRequire } from 'node:module'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { REMOTE } from './remote.js'
+import { applySyncPlanToConfig, createSyncPlan, isSyncConfirmationCurrent } from './sync-plan.js'
 
 // Linked local bundles resolve modules from their real directory, not the
 // profile's node_modules. Resolve only official runtime packages from the DSH
@@ -42,28 +43,12 @@ const DEFAULT_BASE_URL = 'https://api.kimi.com/coding/v1'
 const DEFAULT_USAGE_ENDPOINT = 'https://api.kimi.com/coding/v1/usages'
 /** Default credential reference holding the Kimi Coding API key. */
 const DEFAULT_API_KEY_ENV = 'KIMI_CODING_API_KEY'
-/** Context capacity assumed when the listing discloses none. */
-const DEFAULT_CONTEXT_WINDOW = 1_048_576
 /** Output cap assumed when the listing discloses none. */
 const DEFAULT_MAX_TOKENS = 32_768
 /** Request modalities this harness can attach. */
 const SUPPORTED_INPUTS = new Set(['text', 'image'])
 /** Credential-reference grammar accepted by the Settings panel. */
 const CREDENTIAL_REF_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/
-/**
- * Wire switches the installed pi-ai catalog records for Kimi Coding models.
- * Only fields the pi-ai adapter lets a profile state are named here; the
- * withheld ones keep their pi-ai detection.
- */
-const KIMI_COMPAT = {
-  supportsStrictMode: false,
-  supportsStore: false,
-  supportsDeveloperRole: false,
-  supportsReasoningEffort: true,
-  maxTokensField: 'max_tokens',
-  thinkingFormat: 'openai',
-  requiresReasoningContentOnAssistantMessages: true,
-}
 
 /** Data-only fields; Settings serializes these schemas for the browser. */
 const fields = {
@@ -162,10 +147,14 @@ async function fetchLiveModels(config, apiKey, signal) {
   const headers = { accept: 'application/json' }
   if (apiKey !== undefined) headers.authorization = `Bearer ${apiKey}`
   let response
+  let requestSignal
   try {
-    response = await fetch(config.endpoint, { headers, ...signal === undefined ? {} : { signal } })
+    const deadline = AbortSignal.timeout(30_000)
+    requestSignal = signal === undefined ? deadline : AbortSignal.any([signal, deadline])
+    response = await fetch(config.endpoint, { headers, signal: requestSignal })
   } catch (error) {
-    throw new Error(`could not reach ${config.endpoint}`, { cause: error })
+    const reason = signal?.aborted ? 'cancelled' : requestSignal?.aborted ? 'timed out after 30 seconds' : 'unreachable'
+    throw new Error(`could not read ${config.endpoint} (${reason})`, { cause: error })
   }
   if (!response.ok) {
     const hint = response.status === 401 || response.status === 403 ? '; check the Kimi Coding API key' : ''
@@ -257,55 +246,21 @@ async function servedModelIds(ctx) {
   try {
     const models = await llm.listModels(PROVIDER)
     return models.map(model => model.id)
-  } catch {
-    return []
+  } catch (error) {
+    throw new Error(`could not list the models currently served by ${PROVIDER}`, { cause: error })
   }
 }
 
-/** The route's configured model list, when the profile already declares one. */
-function configuredModels(ctx) {
+/** The complete configured route, used to plan and guard one exact write. */
+function configuredRoute(ctx) {
   const editor = ctx.get('configEditor')
   if (editor === undefined) return undefined
   const entry = editor.entries().find(item => item.options.id === PI_AI_ENTRY)
-  const route = entry?.options.config?.providers?.[PROVIDER]
-  return Array.isArray(route?.models) ? route.models : undefined
+  return entry?.options.config?.providers?.[PROVIDER]
 }
 
-/**
- * Build the next model list. Existing entries keep their fields, with only
- * their display names normalized to the Kimi prefix; a model the route already
- * serves but the profile does not declare stays a bare `{ id }` so the installed
- * catalog keeps describing it; every other model gets a complete entry derived
- * from the listing.
- */
-function buildModels(live, existing, served, config) {
-  const written = new Map()
-  for (const entry of existing ?? []) {
-    if (entry !== null && typeof entry === 'object' && typeof entry.id === 'string') written.set(entry.id, entry)
-  }
-  const servedSet = new Set(served)
-  return live.map((model) => {
-    const kept = written.get(model.id)
-    if (kept !== undefined) {
-      if (typeof kept.name === 'string' && kept.name !== model.name) return { ...kept, name: model.name }
-      return kept
-    }
-    if (servedSet.has(model.id)) return { id: model.id }
-    const entry = {
-      id: model.id,
-      name: model.name,
-      contextWindow: model.contextWindow ?? DEFAULT_CONTEXT_WINDOW,
-      maxTokens: model.maxTokens ?? config.defaultMaxTokens,
-      input: model.input,
-      compat: { ...KIMI_COMPAT },
-    }
-    if (model.efforts !== undefined) entry.reasoningEfforts = model.efforts
-    return entry
-  })
-}
-
-/** Write the model list into the profile's `llm-pi-ai` entry. */
-async function writeModels(ctx, config, models) {
+/** Write one planned route only if the current route still matches its snapshot. */
+async function writeRoute(ctx, plan) {
   const editor = ctx.get('configEditor')
   if (editor === undefined) {
     throw new Error('this profile has no configuration editor, so the model list cannot be saved')
@@ -314,47 +269,33 @@ async function writeModels(ctx, config, models) {
   if (entry === undefined) {
     throw new Error(`this profile has no "${PI_AI_ENTRY}" entry to configure the ${PROVIDER} route on`)
   }
-  await editor.edit(entry, (current) => {
-    const next = structuredClone(current ?? {})
-    const providers = { ...(next.providers ?? {}) }
-    const route = { ...(providers[PROVIDER] ?? {}) }
-    route.apiKeyEnv = typeof route.apiKeyEnv === 'string' ? route.apiKeyEnv : config.apiKeyEnv
-    route.api = typeof route.api === 'string' ? route.api : 'openai-completions'
-    route.baseURL = typeof route.baseURL === 'string' ? route.baseURL : config.baseURL
-    route.models = models
-    providers[PROVIDER] = route
-    next.providers = providers
-    return next
-  })
+  await editor.edit(entry, current => applySyncPlanToConfig(current, plan))
 }
 
 /** One check-and-optionally-write pass shared by the tool, UI, and startup sync. */
-async function sync(ctx, config, apply, signal) {
+async function sync(ctx, config, apply, signal, options = {}) {
   const apiKey = await resolveApiKey(ctx, config.apiKeyEnv)
   const live = await fetchLiveModels(config, apiKey, signal)
   const served = await servedModelIds(ctx)
-  const existing = configuredModels(ctx)
-  const liveIds = new Set(live.map(model => model.id))
-  const added = live.filter(model => !served.includes(model.id)).map(model => model.id)
-  const kept = live.filter(model => served.includes(model.id)).map(model => model.id)
-  const removed = served.filter(id => !liveIds.has(id))
-  const models = buildModels(live, existing, served, config)
-  const unchanged = existing !== undefined
-    && existing.length === models.length
-    && existing.every((entry, index) => entry?.id === models[index]?.id && entry?.name === models[index]?.name)
-  const changed = added.length > 0 || removed.length > 0 || (existing !== undefined && !unchanged)
-  if (apply && changed) await writeModels(ctx, config, models)
+  const plan = createSyncPlan(live, configuredRoute(ctx), served, config)
+  const confirmationCurrent = !options.requireConfirmation
+    || isSyncConfirmationCurrent(plan, options.confirmation)
+  const staleConfirmation = Boolean(apply && plan.changed && !confirmationCurrent)
+  const write = apply && plan.changed && confirmationCurrent
+  if (write) await writeRoute(ctx, plan)
   return {
     provider: PROVIDER,
     endpoint: config.endpoint,
     checkedAt: new Date().toISOString(),
     live: live.map(model => ({ id: model.id, name: model.name })),
-    served: apply ? await servedModelIds(ctx) : served,
-    added,
-    kept,
-    removed,
-    applied: apply && changed,
-    changed,
+    served: write ? await servedModelIds(ctx) : served,
+    added: plan.added,
+    kept: plan.kept,
+    removed: plan.removed,
+    applied: write,
+    changed: plan.changed,
+    syncToken: plan.syncToken,
+    confirmationStale: staleConfirmation,
   }
 }
 
@@ -381,9 +322,9 @@ class KimiCodingModelsService extends TypertRemoteService {
     }
   }
 
-  async sync(apply, signal) {
+  async sync(apply, confirmation, signal) {
     try {
-      return await this.options.operation(apply, signal)
+      return await this.options.operation(apply, signal, { requireConfirmation: true, confirmation })
     } catch (error) {
       throw remoteFailure(error)
     }
@@ -416,7 +357,7 @@ function formatReport(value) {
     if (value.removed.length > 0) lines.push(`Dropped (no longer published): ${value.removed.join(', ')}`)
   } else {
     if (value.added.length > 0) lines.push(`Not served yet: ${value.added.join(', ')}`)
-    if (value.removed.length > 0) lines.push(`Served but no longer published: ${value.removed.join(', ')}`)
+    if (value.removed.length > 0) lines.push(`Configured or served but no longer published: ${value.removed.join(', ')}`)
     lines.push(value.changed
       ? 'Nothing was written. Call again with apply: true to update the route.'
       : 'The route already matches the live catalog.')
@@ -455,7 +396,7 @@ function formatUsageReport(value) {
 /** Register the Remote service, model-sync and quota tools, Settings policy, and startup sync. */
 export function apply(ctx, config) {
   const current = () => currentConfig(config)
-  const operation = (apply, signal) => sync(ctx, current(), apply, signal)
+  const operation = (apply, signal, options) => sync(ctx, current(), apply, signal, options)
   const usage = signal => readUsage(ctx, current(), signal)
 
   ctx.inject(['typert'], (scope) => {
@@ -491,7 +432,7 @@ export function apply(ctx, config) {
       schema: {
         type: 'object',
         additionalProperties: false,
-        required: ['provider', 'endpoint', 'checkedAt', 'live', 'served', 'added', 'kept', 'removed', 'applied', 'changed'],
+        required: ['provider', 'endpoint', 'checkedAt', 'live', 'served', 'added', 'kept', 'removed', 'applied', 'changed', 'syncToken', 'confirmationStale'],
         properties: {
           provider: { type: 'string' },
           endpoint: { type: 'string' },
@@ -514,6 +455,8 @@ export function apply(ctx, config) {
           removed: { type: 'array', items: { type: 'string' } },
           applied: { type: 'boolean' },
           changed: { type: 'boolean' },
+          syncToken: { type: 'string' },
+          confirmationStale: { type: 'boolean' },
         },
       },
       render: (_args, value) => [{ type: 'text', text: formatReport(value) }],
