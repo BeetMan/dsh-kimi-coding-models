@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { applySyncPlanToConfig, createSyncPlan, isSyncConfirmationCurrent, syncValueFingerprint } from '../sync-plan.js'
+import { applyModelCaps, applySyncPlanToConfig, createSyncPlan, isSyncConfirmationCurrent, syncValueFingerprint } from '../sync-plan.js'
 import { parseSyncResult, REMOTE } from '../remote.js'
 
 const config = {
@@ -57,6 +57,33 @@ test('new models use the configured output cap while existing capacities survive
   assert.equal(plan.route.models[0].maxTokens, 131072)
   assert.equal(plan.route.models[1].maxTokens, 131072)
   assert.equal(plan.route.models[1].name, 'Kimi K3.1 Pro')
+})
+
+test('per-model caps are written only to the matching entries', () => {
+  const route = {
+    api: 'openai-completions',
+    models: [
+      { id: 'k3', name: 'Kimi K3' },
+      { id: 'k3.1-pro', name: 'Kimi K3.1 Pro', maxTokens: 32768, contextWindow: 1048576 },
+    ],
+  }
+  const next = applyModelCaps(route, [
+    { id: 'k3', maxTokens: 131072 },
+    { id: 'k3.1-pro', maxTokens: 131072 },
+  ])
+  assert.deepEqual(next.models, [
+    { id: 'k3', name: 'Kimi K3', maxTokens: 131072 },
+    { id: 'k3.1-pro', name: 'Kimi K3.1 Pro', maxTokens: 131072, contextWindow: 1048576 },
+  ])
+  assert.equal(route.models[0].maxTokens, undefined)
+})
+
+test('a null cap restores inheritance and unknown ids are rejected', () => {
+  const route = { models: [{ id: 'k3', name: 'K3', maxTokens: 131072, contextWindow: 1048576 }] }
+  const cleared = applyModelCaps(route, [{ id: 'k3', maxTokens: null }])
+  assert.deepEqual(cleared.models, [{ id: 'k3', name: 'K3', contextWindow: 1048576 }])
+  assert.throws(() => applyModelCaps(route, [{ id: 'missing', maxTokens: 1 }]), /does not list missing/)
+  assert.throws(() => applyModelCaps(undefined, [{ id: 'k3', maxTokens: 1 }]), /no kimi-coding model list/)
 })
 
 test('final write accepts only the route snapshot used by the plan', () => {

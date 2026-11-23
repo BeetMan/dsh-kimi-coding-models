@@ -48,6 +48,53 @@ export function parseSyncResult(value) {
   }
 }
 
+/** Validate one configured model entry crossing the Remote boundary. */
+function parseModelSummary(value) {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)
+    || typeof value.id !== 'string' || value.id.length === 0) {
+    throw new Error('Invalid Kimi Coding model entry')
+  }
+  const model = { id: value.id }
+  if (value.name !== undefined) {
+    if (typeof value.name !== 'string') throw new Error('Invalid Kimi Coding model name')
+    model.name = value.name
+  }
+  for (const key of ['maxTokens', 'contextWindow']) {
+    if (value[key] === undefined) continue
+    if (!Number.isInteger(value[key]) || value[key] <= 0) throw new Error(`Invalid Kimi Coding model ${key}`)
+    model[key] = value[key]
+  }
+  return model
+}
+
+/** Validate and detach the configured model list crossing the Remote boundary. */
+export function parseModelsResult(value) {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)
+    || typeof value.provider !== 'string' || !Array.isArray(value.models)) {
+    throw new Error('Invalid Kimi Coding model list')
+  }
+  return { provider: value.provider, models: value.models.map(parseModelSummary) }
+}
+
+/** Validate the per-model output-cap edits carried by a save request. */
+export function parseCapsInput(value) {
+  if (value === null || typeof value !== 'object' || Array.isArray(value) || !Array.isArray(value.caps)) {
+    throw new Error('Invalid Kimi Coding output-cap request')
+  }
+  const caps = value.caps.map((cap) => {
+    if (cap === null || typeof cap !== 'object' || Array.isArray(cap)
+      || typeof cap.id !== 'string' || cap.id.length === 0) {
+      throw new Error('Invalid Kimi Coding output-cap entry')
+    }
+    if (cap.maxTokens === null) return { id: cap.id, maxTokens: null }
+    if (!Number.isInteger(cap.maxTokens) || cap.maxTokens <= 0) {
+      throw new Error('Invalid Kimi Coding output-cap value')
+    }
+    return { id: cap.id, maxTokens: cap.maxTokens }
+  })
+  return { caps }
+}
+
 /** Validate one quota window, preserving only non-secret quota facts. */
 function parseQuotaWindow(value, field) {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) {
@@ -99,6 +146,20 @@ const usageCodec = {
   typeSymbol: 'dsh-kimi-coding-models#UsageResult',
   schema: { parse: parseUsageResult },
   create: () => ({ parse: parseUsageResult }),
+}
+
+const modelsCodec = {
+  mode: 'strict',
+  typeSymbol: 'dsh-kimi-coding-models#ModelsResult',
+  schema: { parse: parseModelsResult },
+  create: () => ({ parse: parseModelsResult }),
+}
+
+const capsCodec = {
+  mode: 'strict',
+  typeSymbol: 'dsh-kimi-coding-models#CapsInput',
+  schema: { parse: parseCapsInput },
+  create: () => ({ parse: parseCapsInput }),
 }
 
 const applyCodec = {
@@ -165,6 +226,28 @@ export const REMOTE = {
       ],
       cancellation: { parameter: 'signal' },
       result: resultCodec,
+    },
+    {
+      id: 'dsh-kimi-coding-models#kimiCodingModels/models',
+      service: 'kimiCodingModels',
+      namespace: 'kimiCodingModels',
+      method: 'models',
+      invocation: { kind: 'direct' },
+      parameters: [],
+      cancellation: { parameter: 'signal' },
+      result: modelsCodec,
+    },
+    {
+      id: 'dsh-kimi-coding-models#kimiCodingModels/saveCaps',
+      service: 'kimiCodingModels',
+      namespace: 'kimiCodingModels',
+      method: 'saveCaps',
+      invocation: { kind: 'direct' },
+      parameters: [
+        { name: 'input', wire: 'input', source: 'json', codec: capsCodec },
+      ],
+      cancellation: { parameter: 'signal' },
+      result: modelsCodec,
     },
   ],
 }

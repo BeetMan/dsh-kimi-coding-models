@@ -54,6 +54,16 @@ Open **Settings → Kimi Coding**.
   catalog endpoint and check time. Catalog requests are bounded to 30 seconds and are cancelled
   when the panel unmounts or its synchronization settings change.
 
+### Per-model output caps
+
+**Model output caps** lists the models in the profile's `kimi-coding` route — no network request
+is needed. Each row edits that entry's explicit `maxTokens` and writes the route through the
+configuration editor as soon as **Save output caps** is selected. An empty field removes the
+explicit cap, so the entry inherits the catalog default again; **Reload** rereads the route after
+a synchronization or an external edit. Synchronization keeps every existing entry's configured
+capacities, so a cap set here survives later syncs. Newly discovered models still start at the
+global **Default output tokens** value.
+
 The settings area edits the plugin's persisted profile configuration:
 
 | Field | Default | Meaning |
@@ -108,6 +118,18 @@ Read subscription quota:
 kimi_coding_usage({})
 ```
 
+List the configured models and their explicit output caps:
+
+```text
+kimi_coding_model_caps({})
+```
+
+Set or clear one model's cap (a null cap restores catalog inheritance):
+
+```text
+kimi_coding_model_caps({ caps: [{ id: "k3.1-pro", maxTokens: 131072 }] })
+```
+
 Existing route entries keep their configured fields. Their display names are normalized to a
 single `Kimi` prefix (for example, `K3.1 Pro` becomes `Kimi K3.1 Pro`), including on models
 written by an earlier plugin version. A model already described by the installed catalog without
@@ -124,6 +146,9 @@ input modalities, reasoning efforts, and Kimi's OpenAI Chat Completions compatib
   and K3.1 families (their documented maximum is `1048576`). The K2.x `kimi-for-coding` models have
   smaller output caps; lower this setting before syncing a new model from that family if the
   upstream rejects the cap.
+- A model configured as a bare `{ id }` entry inherits the installed catalog's output cap until
+  **Model output caps** writes an explicit value. The per-model editor lists only models already
+  present in the route; synchronize the live catalog first to add a missing model.
 - Interval synchronization runs only while the DSH Host is running, with up to one minute of
   scheduling precision; a stopped Host performs no background sync.
 - A home patch or command-line overlay can override the route. In that case the configuration

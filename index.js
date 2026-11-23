@@ -9,7 +9,7 @@ import { join } from 'node:path'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { REMOTE } from './remote.js'
 import { AUTO_SYNC_TICK_MS, MAX_SYNC_INTERVAL_MINUTES, isAutoSyncDue } from './auto-sync.js'
-import { applySyncPlanToConfig, createSyncPlan, isSyncConfirmationCurrent } from './sync-plan.js'
+import { applyModelCaps, applySyncPlanToConfig, createSyncPlan, isSyncConfirmationCurrent } from './sync-plan.js'
 
 // Linked local bundles resolve modules from their real directory, not the
 // profile's node_modules. Resolve only official runtime packages from the DSH
@@ -293,6 +293,47 @@ async function writeRoute(ctx, plan) {
   await editor.edit(entry, current => applySyncPlanToConfig(current, plan))
 }
 
+/** One configured model reduced to the fields the Settings editor needs. */
+function modelSummary(model) {
+  return {
+    id: model.id,
+    ...typeof model.name === 'string' && model.name.length > 0 ? { name: model.name } : {},
+    ...positiveInt(model.maxTokens) === undefined ? {} : { maxTokens: model.maxTokens },
+    ...positiveInt(model.contextWindow) === undefined ? {} : { contextWindow: model.contextWindow },
+  }
+}
+
+/** Configured route models as the Settings editor sees them. */
+function configuredModels(ctx) {
+  const route = configuredRoute(ctx)
+  const models = Array.isArray(route?.models) ? route.models : []
+  return {
+    provider: PROVIDER,
+    models: models
+      .filter(model => model !== null && typeof model === 'object'
+        && typeof model.id === 'string' && model.id.length > 0)
+      .map(modelSummary),
+  }
+}
+
+/** Set or clear explicit output caps on configured route entries. */
+async function writeModelCaps(ctx, caps) {
+  const editor = ctx.get('configEditor')
+  if (editor === undefined) {
+    throw new Error('this profile has no configuration editor, so model output caps cannot be saved')
+  }
+  const entry = editor.entries().find(item => item.options.id === PI_AI_ENTRY)
+  if (entry === undefined) {
+    throw new Error(`this profile has no "${PI_AI_ENTRY}" entry to configure the ${PROVIDER} route on`)
+  }
+  await editor.edit(entry, (current) => {
+    const providers = { ...(current?.providers ?? {}) }
+    providers[PROVIDER] = applyModelCaps(providers[PROVIDER], caps)
+    return { ...current, providers }
+  })
+  return configuredModels(ctx)
+}
+
 /** One check-and-optionally-write pass shared by the tool, UI, and startup sync. */
 async function sync(ctx, config, apply, signal, options = {}) {
   const apiKey = await resolveApiKey(ctx, config.apiKeyEnv)
@@ -346,6 +387,22 @@ class KimiCodingModelsService extends TypertRemoteService {
   async sync(apply, confirmation, signal) {
     try {
       return await this.options.operation(apply, signal, { requireConfirmation: true, confirmation })
+    } catch (error) {
+      throw remoteFailure(error)
+    }
+  }
+
+  async models() {
+    try {
+      return this.options.models()
+    } catch (error) {
+      throw remoteFailure(error)
+    }
+  }
+
+  async saveCaps(input, signal) {
+    try {
+      return await this.options.saveCaps(input.caps)
     } catch (error) {
       throw remoteFailure(error)
     }
@@ -414,6 +471,33 @@ function formatUsageReport(value) {
   return lines.join('\n')
 }
 
+/** Normalize the tool's optional per-model cap edits. */
+function normalizedCaps(value) {
+  if (value === undefined) return undefined
+  if (!Array.isArray(value)) throw new Error('caps must be an array of { id, maxTokens } entries')
+  return value.map((cap) => {
+    if (cap === null || typeof cap !== 'object' || typeof cap.id !== 'string' || cap.id.length === 0) {
+      throw new Error('each cap needs the model id')
+    }
+    if (cap.maxTokens === null) return { id: cap.id, maxTokens: null }
+    if (!Number.isInteger(cap.maxTokens) || cap.maxTokens <= 0) {
+      throw new Error(`the output cap for ${cap.id} must be a positive whole number or null`)
+    }
+    return { id: cap.id, maxTokens: cap.maxTokens }
+  })
+}
+
+/** Model-facing report of the configured models and their explicit caps. */
+function formatModelsReport(value) {
+  if (value.models.length === 0) return `The ${value.provider} route currently lists no models.`
+  const lines = [`${value.provider} route: ${value.models.length} model(s).`]
+  for (const model of value.models) {
+    const cap = model.maxTokens === undefined ? 'inherits the catalog output cap' : `max output ${model.maxTokens} tokens`
+    lines.push(`- ${model.name ?? model.id} (${model.id}): ${cap}`)
+  }
+  return lines.join('\n')
+}
+
 /** Register the Remote service, model-sync and quota tools, Settings policy, startup sync, and interval sync. */
 export function apply(ctx, config) {
   const current = () => currentConfig(config)
@@ -444,7 +528,12 @@ export function apply(ctx, config) {
       invocations: REMOTE.descriptors,
     }), 'kimi-coding-models: remote descriptors')
   })
-  ctx.plugin(KimiCodingModelsService, { operation, usage })
+  ctx.plugin(KimiCodingModelsService, {
+    operation,
+    usage,
+    models: () => configuredModels(ctx),
+    saveCaps: caps => writeModelCaps(ctx, caps),
+  })
   ctx.inject(['settings'], (scope) => {
     scope.effect(() => scope.settings.configure({ auto: false }, ctx.fiber), 'kimi-coding-models: custom settings page')
   })
@@ -525,6 +614,62 @@ export function apply(ctx, config) {
     timeoutMs: 30_000,
     isConcurrencySafe: () => true,
     execute: async (_args, exec) => usage(exec.signal),
+  })
+
+  ctx.tools.register({
+    name: 'kimi_coding_model_caps',
+    description: "List the models configured on this profile's kimi-coding route with their explicit output caps, "
+      + 'or set a per-model output cap. Setting writes the route configuration; a null cap restores catalog inheritance.',
+    parameters: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        caps: {
+          type: 'array',
+          description: 'Per-model output caps to write. Omit to only list the route models.',
+          items: {
+            type: 'object',
+            additionalProperties: false,
+            required: ['id', 'maxTokens'],
+            properties: {
+              id: { type: 'string' },
+              maxTokens: { anyOf: [{ type: 'integer', minimum: 1 }, { type: 'null' }] },
+            },
+          },
+        },
+      },
+    },
+    output: {
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['provider', 'models'],
+        properties: {
+          provider: { type: 'string' },
+          models: {
+            type: 'array',
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              required: ['id'],
+              properties: {
+                id: { type: 'string' },
+                name: { type: 'string' },
+                maxTokens: { type: 'integer' },
+                contextWindow: { type: 'integer' },
+              },
+            },
+          },
+        },
+      },
+      render: (_args, value) => [{ type: 'text', text: formatModelsReport(value) }],
+      presentationMeta: (_args, value) => value,
+    },
+    timeoutMs: 30_000,
+    execute: async (args) => {
+      const caps = normalizedCaps(args?.caps)
+      return caps === undefined ? configuredModels(ctx) : writeModelCaps(ctx, caps)
+    },
   })
 
   ctx.effect(() => {

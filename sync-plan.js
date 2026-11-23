@@ -43,6 +43,29 @@ export function applySyncPlanToConfig(current, plan) {
 }
 
 /**
+ * Set or clear per-model output caps on one route snapshot.
+ * `maxTokens: null` removes the explicit cap so the entry inherits its
+ * catalog default again; every other configured field is preserved.
+ */
+export function applyModelCaps(route, caps) {
+  if (route === null || typeof route !== 'object' || !Array.isArray(route.models)) {
+    throw new Error('this profile has no kimi-coding model list to edit')
+  }
+  const next = structuredClone(route)
+  const byId = new Map()
+  for (const model of next.models) {
+    if (model !== null && typeof model === 'object' && typeof model.id === 'string') byId.set(model.id, model)
+  }
+  for (const cap of caps) {
+    const model = byId.get(cap.id)
+    if (model === undefined) throw new Error(`the kimi-coding route does not list ${cap.id}`)
+    if (cap.maxTokens === null) delete model.maxTokens
+    else model.maxTokens = cap.maxTokens
+  }
+  return next
+}
+
+/**
  * Build the complete next route and report every entry that writing it removes.
  * Configured-but-not-served entries are included in `removed`: they are just as
  * affected by replacing the configured model list as entries in the live route.
