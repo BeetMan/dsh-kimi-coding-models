@@ -31,6 +31,13 @@ if (installAnchor === undefined) throw new Error(
   `kimi-coding-models: could not locate the running DSH installation (tried: ${installCandidates.join(', ') || 'nothing'})`,
 )
 const hostRequire = createRequire(join(installAnchor, 'package.json'))
+/** This plugin's own package version, for an honest client identification. */
+let PLUGIN_VERSION = '0.0.0'
+try {
+  PLUGIN_VERSION = createRequire(import.meta.url)('./package.json').version ?? PLUGIN_VERSION
+} catch {
+  // Linked checkouts without a resolvable manifest keep the fallback.
+}
 const z = hostRequire('@deepseek-ai/schemastery')
 const { RemoteError, TypertRemoteService } = hostRequire('@deepseek-ai/dsh-typert-protocol')
 
@@ -249,7 +256,7 @@ function quotaWindow(detail, usedRatio, fallbackResetAt, durationMinutes) {
 /** Read Kimi Coding's subscription quota through its live usage endpoint. */
 async function readUsage(ctx, config, signal) {
   const apiKey = await resolveApiKey(ctx, config.apiKeyEnv)
-  const headers = { accept: 'application/json', 'user-agent': 'KimiCLI/1.6' }
+  const headers = { accept: 'application/json', 'user-agent': `dsh-kimi-coding-models/${PLUGIN_VERSION}` }
   if (apiKey !== undefined) headers.authorization = `Bearer ${apiKey}`
   const body = await readEndpoint(endpointUrl(config.usageEndpoint), headers, signal)
   const rolling = Array.isArray(body?.limits)
