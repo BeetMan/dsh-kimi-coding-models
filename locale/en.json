@@ -1,7 +1,7 @@
 {
   "meta": {
     "title": "Kimi Coding models",
-    "description": "Adds a Settings page for synchronizing Kimi Coding models and reading 5-hour and 7-day subscription quotas, with startup-sync and endpoint settings.",
+    "description": "Adds Settings controls for Kimi Coding model synchronization and subscription quota, plus a model-aware chat-window quota pill.",
     "detail": "docs/DETAIL.md"
   }
 }

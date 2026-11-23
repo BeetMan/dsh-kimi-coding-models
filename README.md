@@ -7,8 +7,9 @@ A DeepSeek Harness bundle that keeps the `kimi-coding` route aligned with Kimi C
 - **Settings → Kimi Coding** page with manual **Check for updates** and **Sync models now** actions.
 - Live model comparison, newly added and removed model reporting, and actionable errors.
 - **5-hour rolling** and **7-day** subscription quota display with remaining amounts and reset times.
+- A compact **chat-window quota pill** while the conversation uses `kimi-coding`, with a detail popover, manual refresh, and one-minute automatic refresh while visible.
 - Agent tools: `kimi_coding_models` and `kimi_coding_usage`.
-- Persisted settings for model and quota endpoints, route base URL, credential reference, default output tokens, and startup synchronization.
+- Persisted settings for model and quota endpoints, route base URL, credential reference, default output tokens, startup synchronization, and chat-quota visibility.
 - English and Chinese UI.
 
 The UI and tools call the same Host operations. Model changes are saved through DSH's configuration editor; quota reads never modify configuration.

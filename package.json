@@ -1,6 +1,6 @@
 {
   "name": "dsh-kimi-coding-models",
-  "version": "0.2.3",
+  "version": "0.3.1",
   "private": true,
   "type": "module",
   "description": "Keep the kimi-coding LLM route in step with Kimi Coding's live model catalog",
@@ -32,6 +32,7 @@
       "inject": [
         "@deepseek-ai/dsh-client-locale",
         "@deepseek-ai/dsh-client-ui-settings",
+        "@deepseek-ai/dsh-client-ui-model-selection",
         "@deepseek-ai/dsh-api-remotes"
       ]
     }

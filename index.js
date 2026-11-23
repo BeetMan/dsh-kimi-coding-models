@@ -79,6 +79,8 @@ const fields = {
   defaultMaxTokens: z.number().step(1).min(1).max(Number.MAX_SAFE_INTEGER).default(DEFAULT_MAX_TOKENS),
   /** Run one background sync on the next plugin activation. */
   syncOnStart: z.boolean().default(false),
+  /** Show the quota pill while the conversation uses the kimi-coding route. */
+  showChatQuota: z.boolean().default(true),
 }
 
 /** Plain schema used for diagnostics and non-Loader callers. */
@@ -208,7 +210,9 @@ async function readUsage(ctx, config, signal) {
   if (apiKey !== undefined) headers.authorization = `Bearer ${apiKey}`
   let response
   try {
-    response = await fetch(config.usageEndpoint, { headers, ...signal === undefined ? {} : { signal } })
+    const deadline = AbortSignal.timeout(30_000)
+    const requestSignal = signal === undefined ? deadline : AbortSignal.any([signal, deadline])
+    response = await fetch(config.usageEndpoint, { headers, signal: requestSignal })
   } catch (error) {
     throw new Error(`could not reach ${config.usageEndpoint}`, { cause: error })
   }

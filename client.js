@@ -12,6 +12,7 @@ window.__ModuleLoader__.load({
       apiKeyEnv: 'KIMI_CODING_API_KEY',
       defaultMaxTokens: 32768,
       syncOnStart: false,
+      showChatQuota: true,
     }
 
     const en = {
@@ -60,6 +61,13 @@ window.__ModuleLoader__.load({
       defaultMaxTokensHint: 'Used for a newly discovered model whose listing has no output cap.',
       syncOnStart: 'Sync when DSH starts',
       syncOnStartHint: 'Runs once in the background on the next plugin activation.',
+      showChatQuota: 'Show quota in the chat window',
+      showChatQuotaHint: 'Shows a compact quota pill while the conversation uses Kimi Coding. Refreshes every minute when visible.',
+      chatRollingShort: '5h',
+      chatWeeklyShort: '7d',
+      chatLoading: '…',
+      chatUnavailable: 'Quota unavailable',
+      quotaTimeout: 'Quota request timed out. Try refreshing again.',
       save: 'Save settings',
       saving: 'Saving…',
       discard: 'Discard changes',
@@ -122,6 +130,13 @@ window.__ModuleLoader__.load({
       defaultMaxTokensHint: '线上目录没有给出输出上限时，用于新发现的模型。',
       syncOnStart: 'DSH 启动时同步',
       syncOnStartHint: '下次插件激活时在后台执行一次同步。',
+      showChatQuota: '在聊天窗显示额度',
+      showChatQuotaHint: '当前聊天使用 Kimi Coding 时显示紧凑额度胶囊，可见状态下每分钟刷新。',
+      chatRollingShort: '5 小时',
+      chatWeeklyShort: '7 天',
+      chatLoading: '…',
+      chatUnavailable: '额度不可用',
+      quotaTimeout: '额度请求超时，请重新刷新。',
       save: '保存设置',
       saving: '正在保存…',
       discard: '放弃修改',
@@ -296,6 +311,22 @@ window.__ModuleLoader__.load({
       quotaHead: { display: 'flex', justifyContent: 'space-between', gap: 10, fontSize: 13, fontWeight: 500 },
       progress: { height: 6, borderRadius: 99, overflow: 'hidden', background: 'var(--dsw-alias-bg-skeleton)' },
       progressFill: { height: '100%', borderRadius: 99, background: 'var(--dsw-alias-state-business-primary)' },
+      chatRoot: { position: 'relative', display: 'inline-flex', maxWidth: '100%', fontFamily: 'inherit' },
+      chatTrigger: {
+        appearance: 'none', display: 'inline-flex', alignItems: 'center', gap: 5,
+        maxWidth: '100%', border: '1px solid var(--dsw-alias-border-l2)', borderRadius: 999,
+        background: 'var(--dsw-alias-button-elevated-fill)', color: 'var(--dsw-alias-label-secondary)',
+        padding: '5px 9px', font: 'inherit', fontSize: 11.5, lineHeight: 1.5, cursor: 'pointer',
+        whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums',
+      },
+      chatPanel: {
+        position: 'absolute', bottom: 'calc(100% + 8px)', right: 0, zIndex: 40,
+        boxSizing: 'border-box', width: 330, maxWidth: 'calc(100vw - 32px)', maxHeight: '70vh', overflowY: 'auto',
+        display: 'grid', gap: 12, padding: 14, borderRadius: 12,
+        border: '1px solid var(--dsw-alias-border-l2)', background: 'var(--dsw-alias-bg-layer-2)',
+        color: 'var(--dsw-alias-label-primary)',
+      },
+      chatHeading: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
       fieldGrid: { display: 'grid', gap: 16 },
       field: { display: 'grid', gap: 6 },
       label: { fontSize: 13, fontWeight: 500, display: 'flex', gap: 8, alignItems: 'center' },
@@ -516,6 +547,16 @@ window.__ModuleLoader__.load({
           onChange: event => edit(field, event.target.value),
         }),
         h('p', { id: `kimi-coding-${field}-hint`, style: styles.hint }, t(`${field}Hint`)))
+      const checkboxField = (field) => h('div', { style: styles.checkboxRow },
+        h('input', {
+          id: `kimi-coding-${field}`, type: 'checkbox', style: styles.checkbox,
+          checked: values[field] === true, disabled,
+          'aria-describedby': `kimi-coding-${field}-hint`,
+          onChange: event => edit(field, event.target.checked),
+        }),
+        h('div', null,
+          h('label', { htmlFor: `kimi-coding-${field}`, style: styles.label }, t(field)),
+          h('p', { id: `kimi-coding-${field}-hint`, style: styles.hint }, t(`${field}Hint`))))
       return h('section', { style: styles.card, 'aria-labelledby': 'kimi-coding-settings-title' },
         h('h2', { id: 'kimi-coding-settings-title', style: styles.heading }, t('settings')),
         h('p', { style: styles.description }, t('settingsHint')),
@@ -523,16 +564,7 @@ window.__ModuleLoader__.load({
           !snapshot.writable ? h('p', { style: styles.hint }, t('readOnly')) : null,
           h('div', { style: styles.fieldGrid },
             textField('endpoint'), textField('baseURL'), textField('usageEndpoint'), textField('apiKeyEnv'), textField('defaultMaxTokens'),
-            h('div', { style: styles.checkboxRow },
-              h('input', {
-                id: 'kimi-coding-syncOnStart', type: 'checkbox', style: styles.checkbox,
-                checked: values.syncOnStart === true, disabled,
-                'aria-describedby': 'kimi-coding-syncOnStart-hint',
-                onChange: event => edit('syncOnStart', event.target.checked),
-              }),
-              h('div', null,
-                h('label', { htmlFor: 'kimi-coding-syncOnStart', style: styles.label }, t('syncOnStart')),
-                h('p', { id: 'kimi-coding-syncOnStart-hint', style: styles.hint }, t('syncOnStartHint'))))),
+            checkboxField('syncOnStart'), checkboxField('showChatQuota')),
           h('div', { style: styles.actions },
             h(Button, { type: 'button', primary: true, disabled: disabled || !dirty, onClick: () => { void save() } },
               t(saveState.busy ? 'saving' : 'save')),
@@ -543,6 +575,127 @@ window.__ModuleLoader__.load({
           h('div', { 'aria-live': 'polite' },
             saveState.error ? h('p', { id: 'kimi-coding-settings-error', role: 'alert', style: styles.error }, saveState.error) : null,
             saveState.saved ? h('p', { style: styles.status }, t('saved')) : null)))
+    }
+
+    function ChatQuotaPill(props) {
+      const directory = props.directory
+      const model = React.useSyncExternalStore(
+        listener => directory.subscribe(listener),
+        () => directory.getSnapshot(),
+        () => directory.getSnapshot(),
+      )
+      const form = props.form
+      const config = React.useSyncExternalStore(
+        listener => form.subscribe(listener),
+        () => form.getSnapshot(),
+        () => form.getSnapshot(),
+      )
+      if (config.status !== 'ready' || config.value?.showChatQuota === false
+        || model.current?.provider !== 'kimi-coding') return null
+      return h(ChatQuotaSurface, {
+        ...props,
+        contextKey: JSON.stringify([config.value?.usageEndpoint, config.value?.apiKeyEnv]),
+      })
+    }
+
+    function ChatQuotaSurface(props) {
+      const { t } = props
+      const [state, setState] = React.useState({ usage: null, error: null, refreshing: false })
+      const [open, setOpen] = React.useState(false)
+      const root = React.useRef(null)
+      const trigger = React.useRef(null)
+      const refreshButton = React.useRef(null)
+      const retry = React.useRef(() => {})
+      React.useEffect(() => {
+        let alive = true
+        let busy = false
+        let activeController
+        setState({ usage: null, error: null, refreshing: false })
+        const refresh = async (manual = false) => {
+          if (busy || (!manual && document.visibilityState === 'hidden')) return
+          busy = true
+          const controller = new AbortController()
+          activeController = controller
+          const timeout = setTimeout(() => controller.abort(), 30_000)
+          setState(previous => ({ ...previous, refreshing: true }))
+          try {
+            const usage = await props.usage(controller.signal)
+            if (alive) setState({ usage, error: null, refreshing: false })
+          } catch (error) {
+            if (alive) setState(previous => ({
+              ...previous,
+              refreshing: false,
+              error: controller.signal.aborted ? t('quotaTimeout') : error instanceof Error ? error.message : String(error),
+            }))
+          } finally {
+            clearTimeout(timeout)
+            if (activeController === controller) activeController = undefined
+            busy = false
+            if (alive) setState(previous => ({ ...previous, refreshing: false }))
+          }
+        }
+        retry.current = () => { void refresh(true) }
+        void refresh()
+        const timer = setInterval(() => { void refresh() }, 60_000)
+        const visible = () => { if (document.visibilityState !== 'hidden') void refresh() }
+        document.addEventListener('visibilitychange', visible)
+        return () => {
+          alive = false
+          activeController?.abort()
+          retry.current = () => {}
+          clearInterval(timer)
+          document.removeEventListener('visibilitychange', visible)
+        }
+      }, [props.usage, props.contextKey])
+      React.useEffect(() => {
+        if (!open) return undefined
+        refreshButton.current?.querySelector('button')?.focus()
+        const click = (event) => {
+          if (!root.current?.contains(event.target)) setOpen(false)
+        }
+        const key = (event) => {
+          if (event.key === 'Escape') {
+            setOpen(false)
+            trigger.current?.focus()
+          }
+        }
+        document.addEventListener('mousedown', click)
+        document.addEventListener('keydown', key)
+        return () => {
+          document.removeEventListener('mousedown', click)
+          document.removeEventListener('keydown', key)
+        }
+      }, [open])
+      const usage = state.usage
+      const rolling = usage ? `${Math.round(usage.rolling.usedPercent)}%` : null
+      const weekly = usage ? `${Math.round(usage.weekly.usedPercent)}%` : null
+      const label = usage
+        ? `${t('chatRollingShort')} ${rolling} · ${t('chatWeeklyShort')} ${weekly}${state.error ? ' · *' : ''}`
+        : state.error ? t('chatUnavailable') : t('chatLoading')
+      const fullLabel = `${t('quota')}: ${label}`
+      return h('div', { ref: root, style: styles.chatRoot },
+        h('button', {
+          ref: trigger, type: 'button', style: styles.chatTrigger,
+          'aria-label': fullLabel, title: state.error ?? fullLabel,
+          'aria-expanded': open, 'aria-haspopup': 'dialog',
+          onClick: () => setOpen(previous => !previous),
+        },
+        h('span', { 'aria-hidden': true, style: { color: 'var(--dsw-alias-state-business-primary)' } }, '●'),
+        h('span', null, label)),
+        open ? h('div', {
+          style: styles.chatPanel, role: 'dialog', 'aria-label': t('quota'), 'aria-busy': state.refreshing,
+        },
+        h('div', { style: styles.chatHeading },
+          h('strong', { style: { fontSize: 13 } }, t('quota')),
+          h('span', { ref: refreshButton },
+            h(Button, { type: 'button', disabled: state.refreshing, onClick: () => retry.current() },
+              t(state.refreshing ? 'refreshingQuota' : 'refreshQuota')))),
+        state.error ? h('div', { role: 'alert', style: styles.error }, `${t('operationFailed')}: ${state.error}`) : null,
+        state.error && usage ? h('div', { style: styles.hint }, t('staleResult')) : null,
+        usage ? h('div', { style: { display: 'grid', gap: 12 } },
+          h(QuotaWindow, { t, label: t('rollingQuota'), value: usage.rolling, getLocale: props.getLocale }),
+          h(QuotaWindow, { t, label: t('weeklyQuota'), value: usage.weekly, getLocale: props.getLocale }),
+          h('div', { style: styles.footer }, `${t('checkedAt')}: ${new Date(usage.checkedAt).toLocaleString(props.getLocale?.())}`)) : null) : null)
     }
 
     function KimiCodingSettings(props) {
@@ -568,13 +721,16 @@ window.__ModuleLoader__.load({
             if (!result.ok) throw result.error
             return result.value
           }
+          const check = () => call('read')
+          const sync = () => call('sync', true)
+          const usage = (signal) => call('usage', signal)
           const injected = () => ({
             form,
             t: remoteCtx.locale.bind(NS),
             getLocale: () => remoteCtx.locale.getLocale().active,
-            check: () => call('read'),
-            sync: () => call('sync', true),
-            usage: () => call('usage'),
+            check,
+            sync,
+            usage,
           })
           remoteCtx.effect(() => remoteCtx.configForms.whileServed([ENTRY], () => remoteCtx.slots.inject('settings.section', () => remoteCtx.slots.register({
             name: 'settings.section', id: ENTRY, order: 65, locale: NS,
@@ -583,6 +739,16 @@ window.__ModuleLoader__.load({
           remoteCtx.effect(() => remoteCtx.configForms.whileServed([ENTRY], () => remoteCtx.slots.inject('settings.section.icon', () => remoteCtx.slots.register({
             name: 'settings.section.icon', id: ENTRY, order: 65, locale: NS,
           }, SectionIcon))), 'kimi-coding-models: settings icon')
+          // Match the model-aware composer integration used by OpenCode Go.
+          remoteCtx.inject(['modelDirectories', 'sessions', 'remote.session'], (scope) => {
+            scope.slots.inject('conversation.input.right', () => scope.slots.register({
+              name: 'conversation.input.right', id: 'kimi-coding-usage', order: 900, locale: NS,
+              inject: sessionId => ({
+                ...injected(),
+                directory: scope.modelDirectories.directoryFor(sessionId).store,
+              }),
+            }, ChatQuotaPill))
+          })
         })
       },
     }

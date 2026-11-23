@@ -1,7 +1,7 @@
 {
   "meta": {
     "title": "Kimi Coding 模型同步",
-    "description": "提供 Kimi Coding 设置页，可同步在线模型目录、读取 5 小时和 7 天订阅额度，并设置启动同步及接口地址。",
+    "description": "提供 Kimi Coding 模型同步、订阅额度设置页，并在聊天使用 Kimi Coding 时显示聊天窗额度胶囊。",
     "detail": "docs/DETAIL.md"
   }
 }

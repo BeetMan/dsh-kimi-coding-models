@@ -23,6 +23,19 @@ error rather than invented values. Only normalized quota fields leave the Host. 
 IDs, subscription IDs, wallet details, and other account metadata are discarded. Reading quota
 is read-only and does not change the model route.
 
+## Chat-window quota
+
+While the current conversation uses the `kimi-coding` provider, a compact quota pill appears at
+the right side of the chat input. It shows the used percentage for the 5-hour and 7-day windows.
+Selecting it opens the same normalized details as the Settings page, including remaining amounts,
+reset times, and a manual refresh action.
+
+The pill reads once when it appears and then once per minute while the page is visible. Hidden
+pages skip background reads. Requests are bounded to 30 seconds and cancelled on component
+cleanup, so a stalled request cannot lock later refreshes. A failed refresh retains the previous
+result with an explicit stale notice. Switching away from `kimi-coding` hides the pill. **Show quota in the chat window** in
+Settings controls this integration.
+
 ## Settings page
 
 Open **Settings → Kimi Coding**.
@@ -46,6 +59,7 @@ The settings area edits the plugin's persisted profile configuration:
 | Credential reference | `KIMI_CODING_API_KEY` | Credential name, never the secret key itself |
 | Default output tokens | `32768` | Output cap when a new model's listing discloses none |
 | Sync when DSH starts | off | One background sync on the next plugin activation |
+| Show quota in the chat window | on | Compact model-aware quota pill with one-minute refresh |
 
 Changes are staged until **Save settings**. Validation rejects non-HTTP(S) endpoints, malformed
 credential names, and non-positive output caps. Saves carry the draft's starting revision: a
