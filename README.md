@@ -26,7 +26,15 @@ The UI and tools call the same Host operations. Model changes are saved through 
 
 ## Installation
 
-Install this directory through **Plugins → Add plugin** in DeepSeek Harness, or with the plugin manager's local-directory bundle installation.
+**From a release (after this plugin is published):**
+
+```sh
+dsh plugin add dsh-kimi-coding-models
+# or straight from the repository:
+dsh plugin add https://github.com/BeetMan/dsh-kimi-coding-models
+```
+
+**During development**, install this directory through **Plugins → Add plugin** in DeepSeek Harness, or with the plugin manager's local-directory bundle installation.
 
 ## Usage
 
@@ -42,6 +50,7 @@ From an agent session:
 kimi_coding_models({})
 kimi_coding_models({ apply: true })
 kimi_coding_usage({})
+kimi_coding_model_settings({})
 ```
 
 See [the detailed behavior and limitations](docs/DETAIL.md) before changing advanced settings.
@@ -49,3 +58,11 @@ See [the detailed behavior and limitations](docs/DETAIL.md) before changing adva
 ## Privacy
 
 Only normalized model and quota fields cross the plugin's Host/Client boundary. API keys are resolved through DSH credentials and are never returned to the browser or included in tool output. Account identifiers and wallet metadata from the upstream quota response are discarded.
+
+## Disclaimer
+
+This is an independent, community-made plugin and is **not affiliated with or endorsed by Moonshot AI (月之暗面)**. "Kimi" and related names are trademarks of their respective owners. The plugin only calls the Kimi Coding API endpoints you configure, using your own subscription credential.
+
+## License
+
+[MIT](LICENSE)

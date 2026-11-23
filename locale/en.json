@@ -1,7 +1,7 @@
 {
   "meta": {
-    "title": "Kimi Coding models",
-    "description": "Adds Settings controls for Kimi Coding model synchronization and subscription quota, plus a model-aware chat-window quota pill.",
+    "title": "Kimi Coding models and quota",
+    "description": "Keeps this profile's kimi-coding route in step with Kimi Coding's live model catalog: open Settings → Kimi Coding to check and sync models (optionally on startup or on an interval), set each model's context window and output cap, and read the 5-hour and 7-day subscription quota with reset countdowns. While a conversation uses Kimi Coding, a compact quota pill can sit in the chat input. Model and quota reads contact api.kimi.com with your configured credential; API keys never leave the Host. Requires a profile whose llm-pi-ai route declares kimi-coding.",
     "detail": "docs/DETAIL.md"
   }
 }

@@ -23,7 +23,8 @@
     "cordis.patch.yml",
     "locale/*.json",
     "docs",
-    "icon.svg"
+    "icon.svg",
+    "LICENSE"
   ],
   "engines": {
     "dsh": ">=0.2.2-rc.5"
@@ -42,5 +43,22 @@
         "@deepseek-ai/dsh-api-remotes"
       ]
     }
-  }
+  },
+  "license": "MIT",
+  "author": "BeetMan (https://github.com/BeetMan)",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/BeetMan/dsh-kimi-coding-models.git"
+  },
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "dsh-plugin",
+    "kimi",
+    "kimi-coding",
+    "kimi-for-coding",
+    "llm",
+    "model-sync",
+    "quota"
+  ]
 }
