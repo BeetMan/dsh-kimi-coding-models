@@ -5,6 +5,7 @@ A DeepSeek Harness bundle that keeps the `kimi-coding` route aligned with Kimi C
 ## Features
 
 - **Settings → Kimi Coding** page with manual **Check for updates** and **Sync models now** actions.
+- Optional **interval synchronization**: one background sync per configured interval (1–10080 minutes; `0` disables it) while DSH runs, alongside the existing startup sync.
 - Live model comparison, newly added and removed model reporting, actionable errors, and consistent `Kimi`-prefixed selector names.
 - Snapshot-bound removal confirmation, complete configured/served removal reporting, and bounded cancellable catalog requests.
 - **5-hour rolling** and **7-day** subscription quota display with remaining amounts and reset times.

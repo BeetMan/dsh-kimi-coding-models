@@ -64,16 +64,29 @@ The settings area edits the plugin's persisted profile configuration:
 | Credential reference | `KIMI_CODING_API_KEY` | Credential name, never the secret key itself |
 | Default output tokens | `32768` | Output cap when a new model's listing discloses none |
 | Sync when DSH starts | off | One background sync on the next plugin activation |
+| Interval sync (minutes) | `0` | One background sync at most once per interval while DSH runs; `0` disables it, otherwise 1–10080 |
 | Show quota in the chat window | on | Compact model-aware quota pill with one-minute refresh |
 | Chat quota style | `badge` | Bordered badge, plain text, or dual progress bars |
 
+### Interval synchronization
+
+`Interval sync (minutes)` runs the same Host operation as the startup sync, with the same route
+replacement semantics, while the DSH Host keeps running. The scheduler wakes once a minute and
+syncs only when the configured interval has elapsed, so saved intervals take effect without a
+plugin reload. The first tick after enabling an interval runs one sync immediately; after that,
+attempts are spaced by the interval. At most one sync — interval, startup, Settings, or agent
+tool — runs at a time, and the scheduler skips a tick when another one is in flight. Interval
+synchronization is a background write: unlike the Settings page it has no removal confirmation,
+so a model Kimi stops publishing is dropped silently on the next interval sync. A successful
+write is logged; failures are logged and retried on the next interval.
+
 Changes are staged until **Save settings**. Validation rejects non-HTTP(S) endpoints, malformed
-credential names, and non-positive output caps. Saves carry the draft's starting revision: a
-concurrent change produces a conflict notice and preserves the draft; only a second explicit
-save may overwrite it. **Discard changes** drops the staged edits. Saving a new catalog endpoint,
-route base URL, credential reference, or output-token default invalidates an earlier model check.
-Saving a new quota endpoint or credential reference clears the old quota result so it cannot be
-mistaken for usage read from the new context.
+credential names, non-positive output caps, and an interval outside 0–10080. Saves carry the
+draft's starting revision: a concurrent change produces a conflict notice and preserves the
+draft; only a second explicit save may overwrite it. **Discard changes** drops the staged edits.
+Saving a new catalog endpoint, route base URL, credential reference, or output-token default
+invalidates an earlier model check. Saving a new quota endpoint or credential reference clears
+the old quota result so it cannot be mistaken for usage read from the new context.
 
 ## Agent tool
 
@@ -110,7 +123,8 @@ input modalities, reasoning efforts, and Kimi's OpenAI Chat Completions compatib
   default output tokens (32768). Kimi documents a `max_completion_tokens` default of 131072 for the
   K3 and K3.1 families, so raise that setting before syncing one of those models if you want the
   documented cap.
-- Startup synchronization is not an interval scheduler; it runs once per plugin activation.
+- Interval synchronization runs only while the DSH Host is running, with up to one minute of
+  scheduling precision; a stopped Host performs no background sync.
 - A home patch or command-line overlay can override the route. In that case the configuration
   editor refuses the write and the page reports the failure instead of claiming success.
 - A newly discovered model uses the compatibility switches known by this plugin. A future model

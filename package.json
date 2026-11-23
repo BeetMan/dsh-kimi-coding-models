@@ -1,6 +1,6 @@
 {
   "name": "dsh-kimi-coding-models",
-  "version": "0.4.2",
+  "version": "0.5.0",
   "private": true,
   "type": "module",
   "description": "Keep the kimi-coding LLM route in step with Kimi Coding's live model catalog",
@@ -18,6 +18,7 @@
     "client.js",
     "remote.js",
     "sync-plan.js",
+    "auto-sync.js",
     "cordis.patch.yml",
     "locale/*.json",
     "docs",

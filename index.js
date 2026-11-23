@@ -6,7 +6,9 @@
 import { createRequire } from 'node:module'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
+import { AsyncLocalStorage } from 'node:async_hooks'
 import { REMOTE } from './remote.js'
+import { AUTO_SYNC_TICK_MS, MAX_SYNC_INTERVAL_MINUTES, isAutoSyncDue } from './auto-sync.js'
 import { applySyncPlanToConfig, createSyncPlan, isSyncConfirmationCurrent } from './sync-plan.js'
 
 // Linked local bundles resolve modules from their real directory, not the
@@ -50,6 +52,23 @@ const SUPPORTED_INPUTS = new Set(['text', 'image'])
 /** Credential-reference grammar accepted by the Settings panel. */
 const CREDENTIAL_REF_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/
 
+/**
+ * HMR keeps the active reload transaction in an AsyncLocalStorage on its
+ * service. A timer created while a plugin is hot-reloaded inherits that
+ * context, and a configuration write started from it would be rejected as a
+ * nested HMR transaction. Background syncs therefore run outside that context
+ * whenever the service exposes it; without HMR they run unchanged.
+ */
+function hmrTransactionStorage(ctx) {
+  const hmr = ctx.get('hmr')
+  if (hmr === undefined || hmr === null) return undefined
+  if (hmr.executing instanceof AsyncLocalStorage) return hmr.executing
+  for (const value of Object.values(hmr)) {
+    if (value instanceof AsyncLocalStorage) return value
+  }
+  return undefined
+}
+
 /** Data-only fields; Settings serializes these schemas for the browser. */
 const fields = {
   /** Live model listing to read. */
@@ -64,6 +83,8 @@ const fields = {
   defaultMaxTokens: z.number().step(1).min(1).max(Number.MAX_SAFE_INTEGER).default(DEFAULT_MAX_TOKENS),
   /** Run one background sync on the next plugin activation. */
   syncOnStart: z.boolean().default(false),
+  /** Run a background sync at most once per this many minutes; 0 disables it. */
+  syncIntervalMinutes: z.number().step(1).min(0).max(MAX_SYNC_INTERVAL_MINUTES).default(0),
   /** Show the quota pill while the conversation uses the kimi-coding route. */
   showChatQuota: z.boolean().default(true),
   /** Visual treatment of the chat quota pill. */
@@ -393,10 +414,25 @@ function formatUsageReport(value) {
   return lines.join('\n')
 }
 
-/** Register the Remote service, model-sync and quota tools, Settings policy, and startup sync. */
+/** Register the Remote service, model-sync and quota tools, Settings policy, startup sync, and interval sync. */
 export function apply(ctx, config) {
   const current = () => currentConfig(config)
-  const operation = (apply, signal, options) => sync(ctx, current(), apply, signal, options)
+  const transaction = hmrTransactionStorage(ctx)
+  const outsideTransaction = operation => transaction === undefined ? operation() : transaction.exit(operation)
+  const warn = message => ctx.logger?.('kimi-coding-models')?.warn?.(message)
+  const info = message => ctx.logger?.('kimi-coding-models')?.info?.(message)
+  // The UI, the agent tool, the startup sync, and the interval scheduler share
+  // one in-flight flag so a background write never races a foreground one.
+  let syncing = false
+  const runSync = async (apply, signal, options) => {
+    syncing = true
+    try {
+      return await sync(ctx, current(), apply, signal, options)
+    } finally {
+      syncing = false
+    }
+  }
+  const operation = (apply, signal, options) => runSync(apply, signal, options)
   const usage = signal => readUsage(ctx, current(), signal)
 
   ctx.inject(['typert'], (scope) => {
@@ -494,10 +530,34 @@ export function apply(ctx, config) {
   ctx.effect(() => {
     if (!current().syncOnStart) return undefined
     let active = true
-    void operation(true, undefined).catch((error) => {
+    void outsideTransaction(() => runSync(true, undefined)).catch((error) => {
       if (!active) return
-      ctx.logger?.('kimi-coding-models')?.warn?.(`startup sync failed: ${error instanceof Error ? error.message : String(error)}`)
+      warn(`startup sync failed: ${error instanceof Error ? error.message : String(error)}`)
     })
     return () => { active = false }
   }, 'kimi-coding-models: startup sync')
+
+  // Interval synchronization reads the live configuration on every tick, so a
+  // saved interval takes effect without reloading the plugin. The tick is one
+  // minute; the configured interval decides when a sync is actually due, and
+  // the first enabled tick runs one immediately.
+  ctx.inject(['timer'], (timerScope) => {
+    timerScope.effect(() => {
+      let lastAttemptAt = 0
+      const tick = () => {
+        const minutes = current().syncIntervalMinutes
+        if (!isAutoSyncDue(Date.now(), lastAttemptAt, minutes)) return
+        if (syncing) return
+        lastAttemptAt = Date.now()
+        void outsideTransaction(() => runSync(true, undefined)).then((result) => {
+          if (result.applied) {
+            info(`interval sync updated the ${PROVIDER} route (${result.added.length} added, ${result.removed.length} removed)`)
+          }
+        }).catch((error) => {
+          warn(`interval sync failed: ${error instanceof Error ? error.message : String(error)}`)
+        })
+      }
+      return timerScope.interval(tick, AUTO_SYNC_TICK_MS)
+    }, 'kimi-coding-models: interval sync')
+  })
 }

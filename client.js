@@ -5,6 +5,7 @@ window.__ModuleLoader__.load({
     const h = React.createElement
     const NS = 'settings.kimi-coding-models'
     const ENTRY = 'kimi-coding-models'
+    const MAX_SYNC_INTERVAL_MINUTES = 10080
     const DEFAULTS = {
       endpoint: 'https://api.kimi.com/coding/v1/models',
       baseURL: 'https://api.kimi.com/coding/v1',
@@ -12,6 +13,7 @@ window.__ModuleLoader__.load({
       apiKeyEnv: 'KIMI_CODING_API_KEY',
       defaultMaxTokens: 32768,
       syncOnStart: false,
+      syncIntervalMinutes: 0,
       showChatQuota: true,
       chatQuotaStyle: 'badge',
     }
@@ -67,6 +69,8 @@ window.__ModuleLoader__.load({
       defaultMaxTokensHint: 'Used for a newly discovered model whose listing has no output cap.',
       syncOnStart: 'Sync when DSH starts',
       syncOnStartHint: 'Runs once in the background on the next plugin activation.',
+      syncIntervalMinutes: 'Interval sync (minutes)',
+      syncIntervalMinutesHint: 'Runs one background sync per interval while DSH is running. 0 disables it; 1–10080 minutes, up to one week.',
       showChatQuota: 'Show quota in the chat window',
       showChatQuotaHint: 'Shows a compact quota pill while the conversation uses Kimi Coding. Refreshes every minute when visible.',
       chatRollingShort: '5h',
@@ -94,6 +98,7 @@ window.__ModuleLoader__.load({
       invalidUrl: 'Enter a valid HTTP or HTTPS URL.',
       invalidCredentialRef: 'Use an environment-variable name such as KIMI_CODING_API_KEY.',
       invalidTokens: 'Enter a positive whole number.',
+      invalidInterval: 'Enter 0 to disable, or a whole number of minutes between 1 and 10080.',
       operationFailed: 'The operation failed',
     }
     const zh = {
@@ -143,6 +148,8 @@ window.__ModuleLoader__.load({
       defaultMaxTokensHint: '线上目录没有给出输出上限时，用于新发现的模型。',
       syncOnStart: 'DSH 启动时同步',
       syncOnStartHint: '下次插件激活时在后台执行一次同步。',
+      syncIntervalMinutes: '定时同步间隔（分钟）',
+      syncIntervalMinutesHint: 'DSH 运行期间按此间隔在后台同步；0 表示关闭，可填 1–10080（最长一周）。',
       showChatQuota: '在聊天窗显示额度',
       showChatQuotaHint: '当前聊天使用 Kimi Coding 时显示紧凑额度胶囊，可见状态下每分钟刷新。',
       chatRollingShort: '5 小时',
@@ -170,6 +177,7 @@ window.__ModuleLoader__.load({
       invalidUrl: '请输入有效的 HTTP 或 HTTPS URL。',
       invalidCredentialRef: '请输入环境变量名称，例如 KIMI_CODING_API_KEY。',
       invalidTokens: '请输入正整数。',
+      invalidInterval: '请填写 0（关闭），或 1–10080 之间的整数分钟。',
       operationFailed: '操作失败',
     }
 
@@ -612,6 +620,7 @@ window.__ModuleLoader__.load({
         for (const field of ['endpoint', 'baseURL', 'usageEndpoint']) next[field] = String(next[field]).trim()
         next.apiKeyEnv = String(next.apiKeyEnv).trim()
         next.defaultMaxTokens = Number(next.defaultMaxTokens)
+        next.syncIntervalMinutes = Number(next.syncIntervalMinutes)
         let error = null
         let invalidField = null
         if (!validUrl(next.endpoint)) { error = t('invalidUrl'); invalidField = 'endpoint' }
@@ -619,6 +628,8 @@ window.__ModuleLoader__.load({
         else if (!validUrl(next.usageEndpoint)) { error = t('invalidUrl'); invalidField = 'usageEndpoint' }
         else if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(next.apiKeyEnv)) { error = t('invalidCredentialRef'); invalidField = 'apiKeyEnv' }
         else if (!Number.isInteger(next.defaultMaxTokens) || next.defaultMaxTokens <= 0) { error = t('invalidTokens'); invalidField = 'defaultMaxTokens' }
+        else if (!Number.isInteger(next.syncIntervalMinutes) || next.syncIntervalMinutes < 0
+          || next.syncIntervalMinutes > MAX_SYNC_INTERVAL_MINUTES) { error = t('invalidInterval'); invalidField = 'syncIntervalMinutes' }
         if (error) {
           setSaveState({ busy: false, error, saved: false, field: invalidField })
           return
@@ -642,19 +653,24 @@ window.__ModuleLoader__.load({
           setSaveState({ busy: false, error: cause instanceof Error ? cause.message : String(cause), saved: false, field: null })
         }
       }
-      const textField = (field) => h('div', { style: styles.field },
-        h('label', { style: styles.label, htmlFor: `kimi-coding-${field}` },
-          t(field),
-          snapshot.user && Object.hasOwn(snapshot.user, field) ? h('span', { style: styles.badge }, t('overridden')) : null),
-        h('input', {
-          id: `kimi-coding-${field}`, style: styles.input, value: String(values[field]),
-          type: field === 'defaultMaxTokens' ? 'number' : 'text', min: field === 'defaultMaxTokens' ? 1 : undefined,
-          step: field === 'defaultMaxTokens' ? 1 : undefined, spellCheck: false, disabled,
-          'aria-describedby': `kimi-coding-${field}-hint${saveState.field === field ? ' kimi-coding-settings-error' : ''}`,
-          'aria-invalid': saveState.field === field || undefined,
-          onChange: event => edit(field, event.target.value),
-        }),
-        h('p', { id: `kimi-coding-${field}-hint`, style: styles.hint }, t(`${field}Hint`)))
+      const textField = (field) => {
+        const numeric = field === 'defaultMaxTokens' || field === 'syncIntervalMinutes'
+        const min = field === 'syncIntervalMinutes' ? 0 : 1
+        const max = field === 'syncIntervalMinutes' ? MAX_SYNC_INTERVAL_MINUTES : undefined
+        return h('div', { style: styles.field },
+          h('label', { style: styles.label, htmlFor: `kimi-coding-${field}` },
+            t(field),
+            snapshot.user && Object.hasOwn(snapshot.user, field) ? h('span', { style: styles.badge }, t('overridden')) : null),
+          h('input', {
+            id: `kimi-coding-${field}`, style: styles.input, value: String(values[field]),
+            type: numeric ? 'number' : 'text', min: numeric ? min : undefined,
+            max, step: numeric ? 1 : undefined, spellCheck: false, disabled,
+            'aria-describedby': `kimi-coding-${field}-hint${saveState.field === field ? ' kimi-coding-settings-error' : ''}`,
+            'aria-invalid': saveState.field === field || undefined,
+            onChange: event => edit(field, event.target.value),
+          }),
+          h('p', { id: `kimi-coding-${field}-hint`, style: styles.hint }, t(`${field}Hint`)))
+      }
       const checkboxField = (field) => h('div', { style: styles.checkboxRow },
         h('input', {
           id: `kimi-coding-${field}`, type: 'checkbox', style: styles.checkbox,
@@ -686,7 +702,7 @@ window.__ModuleLoader__.load({
           !snapshot.writable ? h('p', { style: styles.hint }, t('readOnly')) : null,
           h('div', { style: styles.fieldGrid },
             textField('endpoint'), textField('baseURL'), textField('usageEndpoint'), textField('apiKeyEnv'), textField('defaultMaxTokens'),
-            checkboxField('syncOnStart'), checkboxField('showChatQuota'), styleField()),
+            checkboxField('syncOnStart'), textField('syncIntervalMinutes'), checkboxField('showChatQuota'), styleField()),
           h('div', { style: styles.actions },
             h(Button, { type: 'button', primary: true, disabled: disabled || !dirty, onClick: () => { void save() } },
               t(saveState.busy ? 'saving' : 'save')),
