@@ -11,7 +11,7 @@ A DeepSeek Harness bundle that keeps the `kimi-coding` route aligned with Kimi C
 - Snapshot-bound removal confirmation, complete configured/served removal reporting, and bounded cancellable catalog requests.
 - **5-hour rolling** and **7-day** subscription quota display with used percentage, reset time, and a live countdown to that reset.
 - A compact **chat-window quota pill** while the conversation uses `kimi-coding`, with a detail popover, manual refresh, and one-minute automatic refresh while visible.
-- Three persisted pill styles — **badge**, **plain text**, and **dual progress bars** — plus an independent border toggle, with live previews in Settings.
+- Six persisted pill styles — **badge**, **plain text**, **dual progress bars**, **progress ring**, **single progress bar**, and **status dot** (colored by usage) — plus an independent border toggle, with live previews in Settings.
 - Agent tools: `kimi_coding_models`, `kimi_coding_usage`, and `kimi_coding_model_settings`.
 - Persisted settings for model and quota endpoints, route base URL, credential reference, default output tokens, startup synchronization, and chat-quota visibility.
 - English and Chinese UI.

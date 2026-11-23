@@ -34,9 +34,12 @@ The pill reads once when it appears and then once per minute while the page is v
 pages skip background reads. Requests are bounded to 30 seconds and cancelled on component
 cleanup, so a stalled request cannot lock later refreshes. A failed refresh retains the previous
 result with an explicit stale notice. Switching away from `kimi-coding` hides the pill. **Show quota in the chat window** in
-Settings controls this integration. **Chat quota style** offers a bordered badge, plain text, or
-compact dual progress bars, and **Chat quota border** switches the bordered pill on or off
-(plain text always stays borderless), with a live preview before saving.
+Settings controls this integration. **Chat quota style** offers a bordered badge, plain text,
+compact dual progress bars, a progress ring, a single progress bar, or a status dot that turns
+warning-colored from 70% and error-colored from 90% rolling usage; the ring, bar, and dot styles
+show the rolling window and keep the weekly figure in the popover and tooltip. **Chat quota
+border** switches the bordered pill on or off (plain text always stays borderless), with a live
+preview before saving.
 
 ## Settings page
 
@@ -80,7 +83,7 @@ The settings area edits the plugin's persisted profile configuration:
 | Sync when DSH starts | off | One background sync on the next plugin activation |
 | Interval sync (minutes) | `0` | One background sync at most once per interval while DSH runs; `0` disables it, otherwise 1–10080 |
 | Show quota in the chat window | on | Compact model-aware quota pill with one-minute refresh |
-| Chat quota style | `badge` | Badge, plain text, or dual progress bars |
+| Chat quota style | `badge` | Badge, plain text, dual progress bars, progress ring, single progress bar, or status dot |
 | Chat quota border | on | Draws the bordered pill around the indicator; plain text stays borderless |
 
 For a newly configured model, its limits are taken from the live listing first, then from the

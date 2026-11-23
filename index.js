@@ -89,7 +89,7 @@ const fields = {
   /** Show the quota pill while the conversation uses the kimi-coding route. */
   showChatQuota: z.boolean().default(true),
   /** Visual treatment of the chat quota pill. */
-  chatQuotaStyle: z.union([z.const('badge'), z.const('plain'), z.const('bars')]).default('badge'),
+  chatQuotaStyle: z.union([z.const('badge'), z.const('plain'), z.const('bars'), z.const('ring'), z.const('bar'), z.const('dot')]).default('badge'),
   /** Draw the bordered pill around the chat quota indicator. */
   chatQuotaBorder: z.boolean().default(true),
 }

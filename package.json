@@ -1,6 +1,6 @@
 {
   "name": "dsh-kimi-coding-models",
-  "version": "0.7.2",
+  "version": "0.7.3",
   "private": true,
   "type": "module",
   "description": "Keep the kimi-coding LLM route in step with Kimi Coding's live model catalog",

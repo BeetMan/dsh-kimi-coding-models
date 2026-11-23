@@ -104,6 +104,9 @@ window.__ModuleLoader__.load({
       chatQuotaStyle_badge: 'Badge (default)',
       chatQuotaStyle_plain: 'Plain text',
       chatQuotaStyle_bars: 'Dual progress bars',
+      chatQuotaStyle_ring: 'Progress ring',
+      chatQuotaStyle_bar: 'Single progress bar',
+      chatQuotaStyle_dot: 'Status dot',
       stylePreview: 'Preview',
       save: 'Save settings',
       saving: 'Saving…',
@@ -203,6 +206,9 @@ window.__ModuleLoader__.load({
       chatQuotaStyle_badge: '徽章（默认）',
       chatQuotaStyle_plain: '纯文本',
       chatQuotaStyle_bars: '双进度条',
+      chatQuotaStyle_ring: '进度环',
+      chatQuotaStyle_bar: '单进度条',
+      chatQuotaStyle_dot: '状态圆点',
       stylePreview: '预览',
       save: '保存设置',
       saving: '正在保存…',
@@ -944,7 +950,7 @@ window.__ModuleLoader__.load({
           id: 'kimi-coding-chatQuotaStyle', style: styles.input, value: values.chatQuotaStyle, disabled,
           'aria-describedby': 'kimi-coding-chatQuotaStyle-hint',
           onChange: event => edit('chatQuotaStyle', event.target.value),
-        }, ['badge', 'plain', 'bars'].map(style => h('option', { key: style, value: style }, t(`chatQuotaStyle_${style}`)))),
+        }, ['badge', 'plain', 'bars', 'ring', 'bar', 'dot'].map(style => h('option', { key: style, value: style }, t(`chatQuotaStyle_${style}`)))),
         h('p', { id: 'kimi-coding-chatQuotaStyle-hint', style: styles.hint }, t('chatQuotaStyleHint')),
         h('div', { style: styles.stylePreview },
           h('span', { style: styles.hint }, t('stylePreview')),
@@ -987,6 +993,38 @@ window.__ModuleLoader__.load({
         }
         return h('span', { style: styles.chatBars },
           bar('rolling', 'chatRollingShort'), bar('weekly', 'chatWeeklyShort'), stale ? h('span', null, '*') : null)
+      }
+      if ((style === 'ring' || style === 'bar' || style === 'dot') && usage) {
+        const percent = Math.max(0, Math.min(100, Math.round(usage.rolling.usedPercent)))
+        const tone = percent >= 90 ? 'var(--dsw-alias-state-error-primary)'
+          : percent >= 70 ? 'var(--dsw-alias-state-warn-primary)'
+            : 'var(--dsw-alias-state-business-primary)'
+        if (style === 'dot') {
+          return h('span', { style: styles.chatBarGroup },
+            h('span', { 'aria-hidden': true, style: { color: tone, fontSize: 9, lineHeight: 1 } }, '●'),
+            h('span', { style: styles.chatText }, `${t('chatRollingShort')} ${percent}%`))
+        }
+        if (style === 'ring') {
+          const radius = 5
+          const circumference = 2 * Math.PI * radius
+          return h('span', { style: styles.chatBarGroup },
+            h('svg', { width: 14, height: 14, viewBox: '0 0 14 14', 'aria-hidden': true },
+              h('circle', {
+                cx: 7, cy: 7, r: radius, fill: 'none',
+                stroke: 'var(--dsw-alias-bg-skeleton)', strokeWidth: 2.5,
+              }),
+              h('circle', {
+                cx: 7, cy: 7, r: radius, fill: 'none',
+                stroke: tone, strokeWidth: 2.5, strokeLinecap: 'round',
+                strokeDasharray: `${circumference * percent / 100} ${circumference}`,
+                transform: 'rotate(-90 7 7)',
+              })),
+            h('span', { style: styles.chatText }, `${percent}%`))
+        }
+        return h('span', { style: styles.chatBarGroup },
+          h('span', { style: { ...styles.chatBarTrack, width: 36, flex: '0 0 36px' } },
+            h('span', { style: { ...styles.chatBarFill, width: `${percent}%`, background: tone } })),
+          h('span', { style: styles.chatText }, `${percent}%`))
       }
       return h(React.Fragment, null,
         style === 'badge' ? h('span', { 'aria-hidden': true, style: { color: 'var(--dsw-alias-state-business-primary)' } }, '●') : null,
