@@ -599,8 +599,21 @@ window.__ModuleLoader__.load({
     function SectionIcon(props) {
       const size = props.size || 18
       return h('svg', { width: size, height: size, viewBox: '0 0 24 24', fill: 'none', 'aria-hidden': true },
-        h('path', { d: 'M12 3v3m0 12v3M3 12h3m12 0h3M5.6 5.6l2.1 2.1m8.6 8.6 2.1 2.1m0-12.8-2.1 2.1m-8.6 8.6-2.1 2.1', stroke: 'currentColor', strokeWidth: 1.7, strokeLinecap: 'round' }),
-        h('circle', { cx: 12, cy: 12, r: 4, stroke: 'currentColor', strokeWidth: 1.7 }))
+        h('path', { d: 'M20 5v5h-5', stroke: 'currentColor', strokeWidth: 1.7, strokeLinecap: 'round', strokeLinejoin: 'round' }),
+        h('path', { d: 'M4 19v-5h5', stroke: 'currentColor', strokeWidth: 1.7, strokeLinecap: 'round', strokeLinejoin: 'round' }),
+        h('path', { d: 'M5.2 9.5A7.5 7.5 0 0 1 17.7 6.4L20 9M4 15l2.3 2.6a7.5 7.5 0 0 0 12.5-3.1', stroke: 'currentColor', strokeWidth: 1.7, strokeLinecap: 'round', strokeLinejoin: 'round' }))
+    }
+
+    function LockIcon(props) {
+      const size = props.size || 14
+      return h('svg', {
+        width: size, height: size, viewBox: '0 0 24 24', fill: 'none', 'aria-hidden': true,
+        stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round', strokeLinejoin: 'round',
+      },
+        h('rect', { x: 4, y: 11, width: 16, height: 9.5, rx: 2 }),
+        props.locked
+          ? h('path', { d: 'M8 11V7.5a4 4 0 0 1 8 0V11' })
+          : h('path', { d: 'M8 11V7.5a4 4 0 0 1 7.9-0.8' }))
     }
 
     function SyncPanel(props) {
