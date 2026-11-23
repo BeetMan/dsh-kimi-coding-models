@@ -558,28 +558,32 @@ window.__ModuleLoader__.load({
         ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'kimi-coding-models: dictionaries')
         const ready = ctx.remote.$mount(REMOTE)
         ctx.effect(async () => { await ready }, 'kimi-coding-models: remote')
-        const form = ctx.configForms.get(ENTRY)
-        const call = async (method, ...args) => {
-          await ready
-          const result = await ctx.remote.kimiCodingModels[method](...args)
-          if (!result.ok) throw result.error
-          return result.value
-        }
-        const injected = () => ({
-          form,
-          t: ctx.locale.bind(NS),
-          getLocale: () => ctx.locale.getLocale().active,
-          check: () => call('read'),
-          sync: () => call('sync', true),
-          usage: () => call('usage'),
+        // A custom Remote namespace must be injected on a child Context after
+        // $mount; reading it through this parent ctx throws "without inject".
+        ctx.inject(['configForms', 'remote.kimiCodingModels'], (remoteCtx) => {
+          const form = remoteCtx.configForms.get(ENTRY)
+          const call = async (method, ...args) => {
+            await ready
+            const result = await remoteCtx.remote.kimiCodingModels[method](...args)
+            if (!result.ok) throw result.error
+            return result.value
+          }
+          const injected = () => ({
+            form,
+            t: remoteCtx.locale.bind(NS),
+            getLocale: () => remoteCtx.locale.getLocale().active,
+            check: () => call('read'),
+            sync: () => call('sync', true),
+            usage: () => call('usage'),
+          })
+          remoteCtx.effect(() => remoteCtx.configForms.whileServed([ENTRY], () => remoteCtx.slots.inject('settings.section', () => remoteCtx.slots.register({
+            name: 'settings.section', id: ENTRY, order: 65, locale: NS,
+            label: () => remoteCtx.locale.bind(NS)('nav'), inject: injected,
+          }, KimiCodingSettings))), 'kimi-coding-models: settings section')
+          remoteCtx.effect(() => remoteCtx.configForms.whileServed([ENTRY], () => remoteCtx.slots.inject('settings.section.icon', () => remoteCtx.slots.register({
+            name: 'settings.section.icon', id: ENTRY, order: 65, locale: NS,
+          }, SectionIcon))), 'kimi-coding-models: settings icon')
         })
-        ctx.effect(() => ctx.configForms.whileServed([ENTRY], () => ctx.slots.inject('settings.section', () => ctx.slots.register({
-          name: 'settings.section', id: ENTRY, order: 65, locale: NS,
-          label: () => ctx.locale.bind(NS)('nav'), inject: injected,
-        }, KimiCodingSettings))), 'kimi-coding-models: settings section')
-        ctx.effect(() => ctx.configForms.whileServed([ENTRY], () => ctx.slots.inject('settings.section.icon', () => ctx.slots.register({
-          name: 'settings.section.icon', id: ENTRY, order: 65, locale: NS,
-        }, SectionIcon))), 'kimi-coding-models: settings icon')
       },
     }
   },
