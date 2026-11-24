@@ -81,7 +81,8 @@ preview before saving.
 Open **Settings → Kimi Coding**.
 
 - **Check for updates** reads the live catalog and compares it with the models this profile
-  serves. Opening the page alone performs no network request.
+  serves. Opening the page performs no model-catalog request. The quota card below prefers the
+  cached reading and contacts the quota endpoint only when the cache is missing or expired.
 - **Sync models now** is enabled after a check. It writes the complete live list into the
   profile's `llm-pi-ai` row through the configuration editor. The route reloads, and the new
   models become selectable. The page always discloses that synchronization replaces the route

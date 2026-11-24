@@ -1,7 +1,12 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { mkdtemp } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 
 test('Host catalog and quota operations', { skip: !process.env.DSH_INSTALL_DIR && !process.resourcesPath }, async t => {
+  // Quota history must not touch the developer's real home directory.
+  process.env.HOME = await mkdtemp(join(tmpdir(), 'kimi-quota-test-'))
   const mod = await import('../index.js').catch((error) => {
     // The desktop shell exports process.resourcesPath but plain Node cannot
     // require through the packed asar anchor; treat that as unavailable.
@@ -44,14 +49,29 @@ test('Host catalog and quota operations', { skip: !process.env.DSH_INSTALL_DIR &
   }, Object.fromEntries(Object.keys(config).map(key => [key, { get: () => config[key] }])))
 
   let listing = []
+  let quotaBody
+  const quotaPayload = (rollingUsed, weeklyUsed, rollingReset, weeklyReset) => ({
+    limits: [{
+      window: { duration: 300, timeUnit: 'TIME_UNIT_MINUTE' },
+      detail: { limit: 100, used: rollingUsed, remaining: 100 - rollingUsed, resetTime: rollingReset },
+    }],
+    usage: { limit: 100, used: weeklyUsed, remaining: 100 - weeklyUsed, resetTime: weeklyReset },
+    usages: {
+      limit_5h: { used_ratio: rollingUsed / 100, reset_time: rollingReset },
+      limit_7d: { used_ratio: weeklyUsed / 100, reset_time: weeklyReset },
+    },
+  })
   const request = t.mock.method(globalThis, 'fetch', async (url, { headers }) => {
     assert.equal(headers.authorization, 'Bearer test-key')
-    if (url.pathname === '/quota') return new Response(null, { status: 403 })
+    if (url.pathname === '/quota') {
+      if (quotaBody === undefined) return new Response(null, { status: 403 })
+      return Response.json(quotaBody)
+    }
     assert.equal(url.searchParams.get('token'), 'catalog-secret')
     return Response.json({ data: listing })
   })
   const catalog = args => tools.get('kimi_coding_models').execute(args, {})
-  const usage = () => tools.get('kimi_coding_usage').execute({}, {})
+  const usage = args => tools.get('kimi_coding_usage').execute(args ?? {}, {})
   const initial = profile
 
   for (const address of ['http://192.168.1.20', 'http://127.0.0.1.example', 'file:///tmp/catalog']) {
@@ -96,6 +116,44 @@ test('Host catalog and quota operations', { skip: !process.env.DSH_INSTALL_DIR &
   pending.resolve(Response.json({ data: listing }))
   await check
   assert.equal((await catalog({ apply: true })).applied, true)
+
+  // A stale plain read that finishes after a forced refresh must not evict it.
+  {
+    const R = '2026-11-24T12:00:00.000Z'
+    const RW = '2026-11-28T12:00:00.000Z'
+    quotaBody = quotaPayload(31, 10, R, RW)
+    const pendingA = Promise.withResolvers()
+    request.mock.mockImplementationOnce(() => pendingA.promise)
+    const A = usage({})
+    quotaBody = quotaPayload(42, 10, R, RW)
+    const B = await usage({ force: true })
+    assert.equal(B.rolling.used, 42)
+    pendingA.resolve(Response.json(quotaPayload(31, 10, R, RW)))
+    const aValue = await A
+    assert.equal(aValue.rolling.used, 31)
+    const C = await usage({})
+    assert.equal(C.rolling.used, 42)
+    assert.equal(C.checkedAt, B.checkedAt)
+    assert.equal(C.trend.rolling.at(-1), 42)
+  }
+
+  // A same-millisecond reading replaces the curve endpoint.
+  {
+    const R = '2026-11-24T12:00:00.000Z'
+    const RW = '2026-11-28T12:00:00.000Z'
+    t.mock.timers.enable({ apis: ['Date'], now: 1_795_470_000_000 })
+    try {
+      quotaBody = quotaPayload(80, 10, R, RW)
+      const first = await usage({ force: true })
+      assert.equal(first.trend.rolling.at(-1), 80)
+      quotaBody = quotaPayload(4, 10, R, RW)
+      const second = await usage({ force: true })
+      assert.equal(second.rolling.used, 4)
+      assert.equal(second.trend.rolling.at(-1), 4)
+    } finally {
+      t.mock.timers.reset()
+    }
+  }
 
   // A pin toggle during the catalog flight is honored by the write.
   listing = [{ id: 'k3' }]

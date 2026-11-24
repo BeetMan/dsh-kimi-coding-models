@@ -596,6 +596,8 @@ export function apply(ctx, config) {
   const historyDir = join(homedir(), '.dsh', 'kimi-coding-quota-history')
   /** Per-context parsed files, so Host processes never share one writable state. */
   const historyFiles = new Map()
+  /** Monotonic request order; cache and history writes ignore stale latecomers. */
+  let usageSeq = 0
   /** Isolate history per profile, quota endpoint (including its query), and credential reference. */
   const contextIdOf = (cfg) => {
     let profileHome = process.env.DSH_PROFILE_DIR
@@ -615,24 +617,29 @@ export function apply(ctx, config) {
         const parsed = JSON.parse(await readFile(historyPath(contextId), 'utf8'))
         historyFiles.set(contextId, {
           samples: parsed?.version === 2 && Array.isArray(parsed?.samples) ? parsed.samples : [],
+          lastSeq: typeof parsed?.lastSeq === 'number' ? parsed.lastSeq : 0,
         })
       } catch {
-        historyFiles.set(contextId, { samples: [] })
+        historyFiles.set(contextId, { samples: [], lastSeq: 0 })
       }
     }
     return historyFiles.get(contextId)
   }
-  const appendHistory = async (contextId, sample) => {
+  const appendHistory = async (contextId, sample, seq) => {
     try {
       const file = await loadHistoryFile(contextId)
+      // Writes arrive in completion order, but freshness follows initiation
+      // order: a request that started before the last recorded one is stale.
+      if (seq <= file.lastSeq) return
       file.samples = appendSample(file.samples, sample, sample.t)
+      file.lastSeq = seq
       await mkdir(historyDir, { recursive: true })
-      await writeFile(historyPath(contextId), JSON.stringify({ version: 2, samples: file.samples }), 'utf8')
+      await writeFile(historyPath(contextId), JSON.stringify({ version: 2, samples: file.samples, lastSeq: file.lastSeq }), 'utf8')
     } catch {
       // History is advisory; it must never break a quota read.
     }
   }
-  const readQuota = async (cfg, signal) => {
+  const readQuota = async (cfg, signal, seq) => {
     const value = await readUsage(ctx, cfg, signal)
     const contextId = contextIdOf(cfg)
     const now = Date.parse(value.checkedAt)
@@ -643,15 +650,22 @@ export function apply(ctx, config) {
       rollingResetAt: value.rolling.resetAt,
       weeklyResetAt: value.weekly.resetAt,
     }
-    const samples = (await loadHistoryFile(contextId)).samples
-    // Keep the on-disk cadence, but never let the returned curve lag a fresh
-    // reading: overlay the current point when the disk sample is still old.
-    const overlay = Number.isFinite(now) && samples.at(-1)?.t !== now
+    const disk = (await loadHistoryFile(contextId)).samples
+    let view = disk
     if (Number.isFinite(now)) {
-      const last = samples.at(-1)
-      if (last === undefined || now - last.t >= 45_000) await appendHistory(contextId, current)
+      const last = disk.at(-1)
+      if (last === undefined || now - last.t >= 45_000) {
+        await appendHistory(contextId, current, seq)
+        view = (await loadHistoryFile(contextId)).samples
+      } else if (last.t === now) {
+        // Same-millisecond reading: replace the curve endpoint with it.
+        view = [...disk.slice(0, -1), current]
+      } else {
+        // Keep the on-disk cadence, but never let the returned curve lag a
+        // fresh reading: overlay the current point between disk samples.
+        view = [...disk, current]
+      }
     }
-    const view = overlay ? [...samples, current] : samples
     const trend = trendView(view)
     return trend === undefined ? value : { ...value, trend }
   }
@@ -678,9 +692,13 @@ export function apply(ctx, config) {
       if (usageCache?.key === key && Date.now() - usageCache.at < 60_000) return usageCache.value
       if (usageInflight?.key === key) return awaitFor(usageInflight.promise, signal)
     }
-    const promise = readQuota(cfg, force ? signal : undefined)
+    const seq = ++usageSeq
+    const promise = readQuota(cfg, force ? signal : undefined, seq)
       .then((value) => {
-        usageCache = { key, at: Date.now(), value }
+        // A late answer from an earlier request must not evict a fresher cache.
+        if (usageCache === undefined || usageCache.key !== key || usageCache.seq < seq) {
+          usageCache = { key, at: Date.now(), value, seq }
+        }
         return value
       })
       .finally(() => {
