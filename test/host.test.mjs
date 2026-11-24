@@ -1,12 +1,20 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtemp } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises'
+import { syncBuiltinESMExports } from 'node:module'
+import os from 'node:os'
 import { join } from 'node:path'
 
 test('Host catalog and quota operations', { skip: !process.env.DSH_INSTALL_DIR && !process.resourcesPath }, async t => {
   // Quota history must not touch the developer's real home directory.
-  process.env.HOME = await mkdtemp(join(tmpdir(), 'kimi-quota-test-'))
+  const testHome = await mkdtemp(join(os.tmpdir(), 'kimi-quota-test-'))
+  const homeMock = t.mock.method(os, 'homedir', () => testHome)
+  syncBuiltinESMExports()
+  t.after(async () => {
+    homeMock.mock.restore()
+    syncBuiltinESMExports()
+    await rm(testHome, { recursive: true, force: true })
+  })
   const mod = await import('../index.js').catch((error) => {
     // The desktop shell exports process.resourcesPath but plain Node cannot
     // require through the packed asar anchor; treat that as unavailable.
@@ -72,6 +80,18 @@ test('Host catalog and quota operations', { skip: !process.env.DSH_INSTALL_DIR &
   })
   const catalog = args => tools.get('kimi_coding_models').execute(args, {})
   const usage = args => tools.get('kimi_coding_usage').execute(args ?? {}, {})
+  // Resolve only after the selected call reaches fetch, before starting its competitor.
+  const holdNextQuotaRead = async (args) => {
+    const entered = Promise.withResolvers()
+    const response = Promise.withResolvers()
+    request.mock.mockImplementationOnce(() => {
+      entered.resolve()
+      return response.promise
+    })
+    const result = usage(args)
+    await Promise.race([entered.promise, result.then(() => assert.fail('expected an upstream quota request'))])
+    return { result, respond: body => response.resolve(Response.json(body)) }
+  }
   const initial = profile
 
   for (const address of ['http://192.168.1.20', 'http://127.0.0.1.example', 'file:///tmp/catalog']) {
@@ -137,27 +157,30 @@ test('Host catalog and quota operations', { skip: !process.env.DSH_INSTALL_DIR &
     assert.equal(C.trend.rolling.at(-1), 42)
   }
 
+  const historyDir = join(testHome, '.dsh', 'kimi-coding-quota-history')
+  const files = await readdir(historyDir)
+  assert.equal(files.length, 1)
+  const readHistory = async () => JSON.parse(await readFile(join(historyDir, files[0]), 'utf8')).samples
+
   // A newer accepted response advances the high-water mark even when the
   // sampling interval keeps it off disk; a slower earlier request is dropped.
   {
     const R = '2026-11-24T12:00:00.000Z'
     const RW = '2026-11-28T12:00:00.000Z'
-    const realNow = Date.now()
+    const realNow = Date.now() + 60_000
     t.mock.timers.enable({ apis: ['Date'], now: realNow })
     try {
       quotaBody = quotaPayload(10, 10, R, RW)
       await usage({ force: true })
       t.mock.timers.tick(40_000)
-      quotaBody = quotaPayload(31, 10, R, RW)
-      const pendingOld = Promise.withResolvers()
-      request.mock.mockImplementationOnce(() => pendingOld.promise)
-      const old = usage({})
+      const old = await holdNextQuotaRead({ force: true })
       quotaBody = quotaPayload(42, 10, R, RW)
       await usage({ force: true })
       t.mock.timers.tick(6_000)
-      pendingOld.resolve(Response.json(quotaPayload(31, 10, R, RW)))
-      await old
-      const after = await usage({ force: true })
+      old.respond(quotaPayload(31, 10, R, RW))
+      assert.equal((await old.result).rolling.used, 31)
+      assert.deepEqual((await readHistory()).map(sample => sample.rollingPercent), [42, 10])
+      const after = await usage({})
       assert.equal(after.rolling.used, 42)
       assert.equal(after.trend.rolling.at(-1), 42)
     } finally {
@@ -171,20 +194,23 @@ test('Host catalog and quota operations', { skip: !process.env.DSH_INSTALL_DIR &
     const R = '2026-11-24T12:00:00.000Z'
     const RW = '2026-11-28T12:00:00.000Z'
     const quotaUrl = config.usageEndpoint
-    quotaBody = quotaPayload(32, 10, R, RW)
-    const pendingA = Promise.withResolvers()
-    request.mock.mockImplementationOnce(() => pendingA.promise)
-    const A = usage({})
+    config.usageEndpoint = `${quotaUrl}&account=A`
+    const A = await holdNextQuotaRead({})
     quotaBody = quotaPayload(43, 10, R, RW)
     const refreshed = await usage({ force: true })
     assert.equal(refreshed.rolling.used, 43)
     config.usageEndpoint = `${quotaUrl}&account=B`
+    quotaBody = quotaPayload(8, 10, R, RW)
     await usage({ force: true })
-    pendingA.resolve(Response.json(quotaPayload(32, 10, R, RW)))
-    await A
+    A.respond(quotaPayload(32, 10, R, RW))
+    assert.equal((await A.result).rolling.used, 32)
+    config.usageEndpoint = `${quotaUrl}&account=A`
+    quotaBody = quotaPayload(47, 10, R, RW)
+    const before = request.mock.callCount()
+    const backOnA = await usage({})
+    assert.equal(backOnA.rolling.used, 47)
+    assert.equal(request.mock.callCount(), before + 1)
     config.usageEndpoint = quotaUrl
-    const backOnA = await usage({ force: true })
-    assert.equal(backOnA.rolling.used, 43)
   }
 
   // A Host restart re-imports the module: persisted history is kept, request
@@ -209,6 +235,7 @@ test('Host catalog and quota operations', { skip: !process.env.DSH_INSTALL_DIR &
       const afterRestart = await restartedTools.get('kimi_coding_usage').execute({ force: true }, {})
       assert.equal(afterRestart.rolling.used, 60)
       assert.equal(afterRestart.trend.rolling.at(-1), 60)
+      assert.deepEqual((await readHistory()).map(sample => sample.rollingPercent), [42, 10, 60])
     } finally {
       t.mock.timers.reset()
     }
