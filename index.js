@@ -596,8 +596,10 @@ export function apply(ctx, config) {
   const historyDir = join(homedir(), '.dsh', 'kimi-coding-quota-history')
   /** Per-context parsed files, so Host processes never share one writable state. */
   const historyFiles = new Map()
-  /** Monotonic request order; cache and history writes ignore stale latecomers. */
+  /** Monotonic request order, meaningful only inside this Host instance. */
   let usageSeq = 0
+  /** Highest accepted sequence per context key; never persisted. */
+  const lastAccepted = new Map()
   /** Isolate history per profile, quota endpoint (including its query), and credential reference. */
   const contextIdOf = (cfg) => {
     let profileHome = process.env.DSH_PROFILE_DIR
@@ -617,7 +619,8 @@ export function apply(ctx, config) {
         const parsed = JSON.parse(await readFile(historyPath(contextId), 'utf8'))
         historyFiles.set(contextId, {
           samples: parsed?.version === 2 && Array.isArray(parsed?.samples) ? parsed.samples : [],
-          lastSeq: typeof parsed?.lastSeq === 'number' ? parsed.lastSeq : 0,
+          // Request sequences do not survive a restart; a fresh Host starts at zero.
+          lastSeq: 0,
         })
       } catch {
         historyFiles.set(contextId, { samples: [], lastSeq: 0 })
@@ -625,18 +628,25 @@ export function apply(ctx, config) {
     }
     return historyFiles.get(contextId)
   }
-  const appendHistory = async (contextId, sample, seq) => {
+  /**
+   * Record one accepted response. Every accepted response advances the
+   * context high-water mark — even when the sampling interval keeps it off
+   * disk — so a slower, earlier-initiated request cannot land afterwards.
+   * Returns whether the sample was appended to disk.
+   */
+  const recordSample = async (contextId, sample, seq, due) => {
     try {
       const file = await loadHistoryFile(contextId)
-      // Writes arrive in completion order, but freshness follows initiation
-      // order: a request that started before the last recorded one is stale.
-      if (seq <= file.lastSeq) return
-      file.samples = appendSample(file.samples, sample, sample.t)
+      if (seq <= file.lastSeq) return false
       file.lastSeq = seq
+      if (!due) return false
+      file.samples = appendSample(file.samples, sample, sample.t)
       await mkdir(historyDir, { recursive: true })
-      await writeFile(historyPath(contextId), JSON.stringify({ version: 2, samples: file.samples, lastSeq: file.lastSeq }), 'utf8')
+      await writeFile(historyPath(contextId), JSON.stringify({ version: 2, samples: file.samples }), 'utf8')
+      return true
     } catch {
       // History is advisory; it must never break a quota read.
+      return false
     }
   }
   const readQuota = async (cfg, signal, seq) => {
@@ -654,10 +664,11 @@ export function apply(ctx, config) {
     let view = disk
     if (Number.isFinite(now)) {
       const last = disk.at(-1)
-      if (last === undefined || now - last.t >= 45_000) {
-        await appendHistory(contextId, current, seq)
+      const appended = await recordSample(contextId, current, seq,
+        last === undefined || now - last.t >= 45_000)
+      if (appended) {
         view = (await loadHistoryFile(contextId)).samples
-      } else if (last.t === now) {
+      } else if (last !== undefined && last.t === now) {
         // Same-millisecond reading: replace the curve endpoint with it.
         view = [...disk.slice(0, -1), current]
       } else {
@@ -695,9 +706,13 @@ export function apply(ctx, config) {
     const seq = ++usageSeq
     const promise = readQuota(cfg, force ? signal : undefined, seq)
       .then((value) => {
-        // A late answer from an earlier request must not evict a fresher cache.
-        if (usageCache === undefined || usageCache.key !== key || usageCache.seq < seq) {
-          usageCache = { key, at: Date.now(), value, seq }
+        // Acceptance follows initiation order per context: a late answer from
+        // an earlier request never evicts a fresher one, even after another
+        // context borrowed the single cache slot.
+        const accepted = lastAccepted.get(key) ?? 0
+        if (seq > accepted) {
+          lastAccepted.set(key, seq)
+          usageCache = { key, at: Date.now(), value }
         }
         return value
       })

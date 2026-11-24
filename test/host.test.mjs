@@ -137,6 +137,83 @@ test('Host catalog and quota operations', { skip: !process.env.DSH_INSTALL_DIR &
     assert.equal(C.trend.rolling.at(-1), 42)
   }
 
+  // A newer accepted response advances the high-water mark even when the
+  // sampling interval keeps it off disk; a slower earlier request is dropped.
+  {
+    const R = '2026-11-24T12:00:00.000Z'
+    const RW = '2026-11-28T12:00:00.000Z'
+    const realNow = Date.now()
+    t.mock.timers.enable({ apis: ['Date'], now: realNow })
+    try {
+      quotaBody = quotaPayload(10, 10, R, RW)
+      await usage({ force: true })
+      t.mock.timers.tick(40_000)
+      quotaBody = quotaPayload(31, 10, R, RW)
+      const pendingOld = Promise.withResolvers()
+      request.mock.mockImplementationOnce(() => pendingOld.promise)
+      const old = usage({})
+      quotaBody = quotaPayload(42, 10, R, RW)
+      await usage({ force: true })
+      t.mock.timers.tick(6_000)
+      pendingOld.resolve(Response.json(quotaPayload(31, 10, R, RW)))
+      await old
+      const after = await usage({ force: true })
+      assert.equal(after.rolling.used, 42)
+      assert.equal(after.trend.rolling.at(-1), 42)
+    } finally {
+      t.mock.timers.reset()
+    }
+  }
+
+  // A stale response from context A cannot evict A's accepted value even
+  // after context B borrowed the single cache slot.
+  {
+    const R = '2026-11-24T12:00:00.000Z'
+    const RW = '2026-11-28T12:00:00.000Z'
+    const quotaUrl = config.usageEndpoint
+    quotaBody = quotaPayload(32, 10, R, RW)
+    const pendingA = Promise.withResolvers()
+    request.mock.mockImplementationOnce(() => pendingA.promise)
+    const A = usage({})
+    quotaBody = quotaPayload(43, 10, R, RW)
+    const refreshed = await usage({ force: true })
+    assert.equal(refreshed.rolling.used, 43)
+    config.usageEndpoint = `${quotaUrl}&account=B`
+    await usage({ force: true })
+    pendingA.resolve(Response.json(quotaPayload(32, 10, R, RW)))
+    await A
+    config.usageEndpoint = quotaUrl
+    const backOnA = await usage({ force: true })
+    assert.equal(backOnA.rolling.used, 43)
+  }
+
+  // A Host restart re-imports the module: persisted history is kept, request
+  // sequences restart at zero, and the first due reading updates everything.
+  {
+    const R = '2026-11-24T12:00:00.000Z'
+    const RW = '2026-11-28T12:00:00.000Z'
+    const restarted = await import(`../index.js?restart=${Date.now()}`)
+    const restartedTools = new Map()
+    restarted.apply({
+      get: name => services[name],
+      tools: { register: tool => restartedTools.set(tool.name, tool) },
+      plugin() {},
+      inject() {},
+      effect() {},
+    }, Object.fromEntries(Object.keys(config).map(key => [key, { get: () => config[key] }])))
+    // Later than every sample the earlier blocks wrote for this context.
+    const realNow = Date.now() + 120_000
+    t.mock.timers.enable({ apis: ['Date'], now: realNow })
+    try {
+      quotaBody = quotaPayload(60, 10, R, RW)
+      const afterRestart = await restartedTools.get('kimi_coding_usage').execute({ force: true }, {})
+      assert.equal(afterRestart.rolling.used, 60)
+      assert.equal(afterRestart.trend.rolling.at(-1), 60)
+    } finally {
+      t.mock.timers.reset()
+    }
+  }
+
   // A same-millisecond reading replaces the curve endpoint.
   {
     const R = '2026-11-24T12:00:00.000Z'
