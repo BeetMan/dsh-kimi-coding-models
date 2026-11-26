@@ -26,16 +26,16 @@ The UI and tools call the same Host operations. Model changes are saved through 
 
 ## Installation
 
-**From GitHub** (available now; the package has no build step):
-
-```sh
-dsh plugin --profile <profile> add github:BeetMan/dsh-kimi-coding-models
-```
-
-**From npm** (after this plugin is published):
+**From npm:**
 
 ```sh
 dsh plugin --profile <profile> add dsh-kimi-coding-models
+```
+
+**From GitHub** (the package has no build step):
+
+```sh
+dsh plugin --profile <profile> add github:BeetMan/dsh-kimi-coding-models
 ```
 
 `--profile` is required: replace `<profile>` with the profile you run (`desktop` for the
