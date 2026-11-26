@@ -21,7 +21,7 @@ reference and normalizes two windows:
 - the **7-day quota**, with the same facts.
 
 Every successful read appends a sample to a local history file
-(`~/.dsh/kimi-coding-quota-history/<context>.json`, seven-day retention, one per minute at most).
+(`~/.dsh/kimi-coding-quota-history/<context>.json`, seven-day retention, one sample every 45 seconds at most).
 Each context gets its own file, isolated per profile, the full quota endpoint (including its query),
 and credential reference — the context id is a hash of those identifiers, so no API key or URL
 credential is persisted in plaintext; a context with no history starts empty, and separate Host

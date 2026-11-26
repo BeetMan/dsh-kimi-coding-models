@@ -26,13 +26,24 @@ The UI and tools call the same Host operations. Model changes are saved through 
 
 ## Installation
 
-**From a release (after this plugin is published):**
+**From GitHub** (available now; the package has no build step):
 
 ```sh
-dsh plugin add dsh-kimi-coding-models
-# or straight from the repository:
-dsh plugin add https://github.com/BeetMan/dsh-kimi-coding-models
+dsh plugin --profile <profile> add github:BeetMan/dsh-kimi-coding-models
 ```
+
+**From npm** (after this plugin is published):
+
+```sh
+dsh plugin --profile <profile> add dsh-kimi-coding-models
+```
+
+`--profile` is required: replace `<profile>` with the profile you run (`desktop` for the
+desktop app, `web` for `dsh web`). The command installs and enables the bundle in one step;
+restart DeepSeek Harness (or `dsh web`) afterwards.
+
+**Without the command line:** open **Settings → Plugins → Add plugin**, enter the package name
+or the GitHub source above as the install source, then choose **Install** and **Enable now**.
 
 **During development**, install this directory through **Plugins → Add plugin** in DeepSeek Harness, or with the plugin manager's local-directory bundle installation.
 
